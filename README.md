@@ -38,10 +38,13 @@ been created or pushed by this setup.
    password. Do not upgrade the plan or enable paid add-ons for this setup.
 3. In Supabase's Edge Function secrets, set these once:
 
-   | Secret             | Value                                                                                                                                        |
-   | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
-   | `APP_DATABASE_URL` | PostgreSQL transaction-pooler connection string from **Connect**, port 6543. Include the database password, URL-encoding special characters. |
-   | `STAFF_PASSWORD`   | A long password shared only with trusted staff.                                                                                              |
+   | Secret           | Value                                           |
+   | ---------------- | ----------------------------------------------- |
+   | `STAFF_PASSWORD` | A long password shared only with trusted staff. |
+
+   Supabase automatically supplies `SUPABASE_DB_URL`; no database-URL secret
+   needs to be entered. The hosted function uses that built-in connection only.
+   `PUBLIC_URL` is set by the deployment workflow from the GitHub Pages address.
 
 4. In GitHub **Settings → Secrets and variables → Actions**, add:
 

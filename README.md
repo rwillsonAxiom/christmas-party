@@ -3,7 +3,7 @@
 Named credit accounts, printable QR cards, a public viewer, and a staff camera
 scanner. The frontend deploys to **GitHub Pages**; our API runs in a **Supabase
 Edge Function** and stores accounts, sessions and retry receipts in
-**PostgreSQL**. There is no Supabase SDK or database credential in the browser.
+**PostgreSQL**. There is no Supabase SDK or database credential in the browser. 
 
 ## Everyday use
 

@@ -1,0 +1,45 @@
+{
+  "folders": [
+    { "name": "credit-cards", "path": "." }
+  ],
+  "settings": {
+    "deno.enable": true
+  },
+  "extensions": {
+    "recommendations": ["denoland.vscode-deno"]
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      { "label": "Build camera scanner", "type": "process", "command": "deno", "args": ["task", "scanner:build"], "options": { "cwd": "${workspaceFolder:credit-cards}" }, "problemMatcher": [] },
+      { "label": "Stop local PostgreSQL", "type": "process", "command": "deno", "args": ["task", "dev:stop"], "options": { "cwd": "${workspaceFolder:credit-cards}" }, "problemMatcher": [] }
+    ]
+  },
+  "launch": {
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Run Credit Cards server",
+        "preLaunchTask": "Build camera scanner",
+        "postDebugTask": "Stop local PostgreSQL",
+        "type": "node",
+        "request": "launch",
+        "runtimeExecutable": "deno",
+        "runtimeArgs": [
+          "run",
+          "--env-file=.env",
+          "--inspect-wait=127.0.0.1:9229",
+          "--allow-net",
+          "--allow-read",
+          "--allow-write=./data",
+          "--allow-run",
+          "--allow-env"
+        ],
+        "program": "${workspaceFolder:credit-cards}/dev.ts",
+        "cwd": "${workspaceFolder:credit-cards}",
+        "attachSimplePort": 9229,
+        "console": "integratedTerminal"
+      }
+    ]
+  }
+}

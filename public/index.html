@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#173f38">
+    <meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'self'; form-action 'self'">
+    <meta name="referrer" content="no-referrer">
+    <title>Credit Cards</title>
+    <link rel="stylesheet" href="./style.css">
+    <script type="module" src="./app.js"></script>
+  </head>
+  <body>
+    <header
+      class="topbar"><a class="brand" href="#/"><span class="brand-mark">C</span> Credit Cards</a><span class="tag">A little credit goes a long way.</span></header>
+    <main id="app">
+      <p class="loading" role="status">Loading your accounts…</p>
+    </main>
+    <div id="message" role="status" aria-live="polite" hidden></div>
+    <section id="print-cards" aria-label="Printable account cards"></section>
+    <footer>Scan a card. Check a balance. Keep things moving.</footer>
+  </body>
+</html>

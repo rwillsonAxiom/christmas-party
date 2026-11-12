@@ -1,0 +1,40 @@
+Focused dependency review: @paulmillr/qr 0.7.2 from JSR
+Reviewed 12 November 2026
+
+Scope: published index.ts (encoder), decode.ts (decoder), dom.ts (optional
+camera/DOM helpers), import graph, argument validation, SVG generation,
+camera lifecycle and browser side effects. This is a focused manual review
+and targeted search, not a complete line-by-line mathematical audit, fuzzing
+campaign or security certification. It does not cover future releases.
+
+Findings:
+- No external dependencies in the published module graph.
+- No runtime network calls, analytics, storage access, dynamic imports,
+  eval/new Function or automatic navigation found in these three modules.
+  The fetch() match in dom.ts is a documentation example, not runtime code.
+- Importing the encoder/decoder does not request camera permission.
+- The decoder validates integer dimensions, buffer layout and lengths;
+  limits dimensions to 4096 per side and its input arena to 64 MiB.
+- Encoder payload capacity and output dimensions are checked. SVG rendering
+  produces numeric QR geometry rather than inserting the payload as HTML.
+- Decoder retry time/effort controls are not a hard CPU deadline for the
+  complete operation.
+- Optional DOM helpers retain camera/image resources until stop/clear.
+  QRCanvas reserves a large capacity by default. The optional svgToPng
+  parses SVG; it is not a sanitizer for arbitrary markup.
+
+Integration decisions:
+- Pin 0.7.2 and retain Deno lockfile integrity checks.
+- Import only encoder/decoder into production, not the optional DOM helpers.
+- Request video only after a button click, limit frames to 800x800 and scan
+  frequency, and stop media tracks on exit. Frames stay in the browser.
+- Decode with effort=1 and timeLimit=8; pause after accepting a card.
+- Treat decoded text as untrusted: extract an account UUID from a recognised
+  URL shape, never navigate to the scanned URL or insert it as HTML.
+- Require server-side staff sessions for every credit change.
+- Review upgrades explicitly. These checks cannot prove absence of bugs.
+
+Published source SHA-256 (reviewed version, independent of branch names):
+index.ts 16a89dcde89a00cfb624ee648dca58e2bd81e3e47776d4e9dd751d847b771756
+decode.ts b993026b3bdc337dd99d65129a37222ab9161a80e5a096b312a339ad34020f1f
+dom.ts 088f9eb4a13bf2c829e89793816baacfc9ac02881a2680a13faf845a6f378ac6

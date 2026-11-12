@@ -1,0 +1,66 @@
+name: Deploy Pages and Supabase
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    uses: ./.github/workflows/ci.yml
+  deploy:
+    needs: check
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: production-deployment
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.pages-deploy.outputs.page_url }}
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.6
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Check required deployment settings
+        shell: bash
+        run: |
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo 'Set SUPABASE_ACCESS_TOKEN in GitHub secrets'; exit 1; }
+          test -n "$SUPABASE_DB_PASSWORD" || { echo 'Set SUPABASE_DB_PASSWORD in GitHub secrets'; exit 1; }
+          test -n "$SUPABASE_PROJECT_REF" || { echo 'Set SUPABASE_PROJECT_REF in GitHub variables'; exit 1; }
+      - uses: actions/configure-pages@v5
+        id: pages
+      - name: Deploy database migrations
+        run: |
+          supabase link --project-ref "$SUPABASE_PROJECT_REF"
+          supabase db push --remote --yes
+      - name: Configure frontend URL and deploy API
+        env:
+          PUBLIC_URL: ${{ steps.pages.outputs.base_url }}
+        run: |
+          supabase secrets set "PUBLIC_URL=$PUBLIC_URL" --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy credit-cards --project-ref "$SUPABASE_PROJECT_REF"
+      - name: Verify API and database are reachable
+        run: |
+          curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 2 --output /dev/null "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/credit-cards/api/accounts"
+      - name: Build static frontend
+        run: |
+          export API_BASE_URL="https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/credit-cards"
+          deno task build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - uses: actions/deploy-pages@v4
+        id: pages-deploy

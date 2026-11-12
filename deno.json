@@ -1,0 +1,17 @@
+{
+  "tasks": {
+    "scanner:build": "deno bundle --platform browser --output public/scanner.js scanner.ts",
+    "dev": "deno task scanner:build && deno run --env-file=.env --allow-net --allow-read --allow-write=./data --allow-run --allow-env dev.ts",
+    "dev:prepare": "deno run --env-file=.env --allow-net --allow-read --allow-write=./data --allow-run --allow-env scripts/dev-db.ts",
+    "dev:stop": "deno run --env-file=.env --allow-read --allow-run --allow-env scripts/dev-db.ts stop",
+    "test:local": "deno run --env-file=.env --allow-net --allow-read --allow-write=./data --allow-run --allow-env scripts/test-local.ts",
+    "start": "deno task scanner:build && deno run --env-file=.env --allow-net --allow-read=. --allow-env server.ts",
+    "check": "deno task scanner:build && deno check dev.ts server.ts supabase/functions/credit-cards/index.ts server_test.ts database_test.ts scanner.ts scanner_test.ts scripts/*.ts && deno check public/app.js",
+    "test": "deno test --allow-net --allow-env --allow-read=. server_test.ts database_test.ts scanner_test.ts",
+    "diagnose": "deno run --env-file=.env --allow-net --allow-env scripts/diagnose.ts",
+    "build": "deno task scanner:build && deno run --allow-read=public --allow-write=dist --allow-env=API_BASE_URL scripts/build.ts",
+    "import:kv": "deno run --env-file=.env --unstable-kv --allow-net --allow-env --allow-read=./data --allow-write=./data scripts/import-kv.ts"
+  },
+  "compilerOptions": { "lib": ["deno.ns", "deno.unstable", "dom", "esnext"] },
+  "fmt": { "exclude": ["dist/", "data/", "public/scanner.js"] }
+}

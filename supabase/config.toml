@@ -1,0 +1,7 @@
+project_id = "credit-cards"
+[db]
+major_version = 17
+[functions.credit-cards]
+# Public reads and our own password/session authentication, not Supabase JWTs.
+verify_jwt = false
+entrypoint = "./functions/credit-cards/index.ts"

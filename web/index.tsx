@@ -522,60 +522,67 @@ async function scannerPage() {
     try {
       const { startScanner, cardIdFromCode } = await loadScanner();
       if (version !== pageVersion) return;
-      const controller = await startScanner(video, (code) => {
-        if (
-          version !== pageVersion ||
-          query<HTMLDialogElement>("#sync-dialog").open
-        ) return false;
-        const id = cardIdFromCode(code);
-        if (!id) {
-          if (Date.now() - lastInvalidNotice > 3000) {
-            error.textContent = "That QR code is not an account card.";
-            lastInvalidNotice = Date.now();
-          }
-          return false;
-        }
-        error.textContent = "";
-        if (id === selectedId || Date.now() < retryCardAfter) {
-          return false;
-        }
-        selectedId = id;
-        ++scanSelection;
-        const showAccount = () => {
-          activeAccount = accountCache.get(id);
-          if (!activeAccount) return;
-          name.textContent = activeAccount.name;
-          cooldown();
-          updateBalance();
-          status.textContent =
-            "Card ready. Show another card to switch accounts.";
-        };
-        if (accountCache.get(id)) {
-          showAccount();
-          void checkAccount(id);
-        } else {
-          activeAccount = undefined;
-          query<HTMLButtonElement>("#add").disabled = true;
-          query<HTMLButtonElement>("#remove").disabled = true;
-          name.textContent = "Loading...";
-          balance.textContent = "\u2014";
-          // Unknown cards need one lookup; a later scan must not be replaced by it.
-          const selection = ++scanSelection;
-          accountCache.refresh(id).then(() => {
-            if (version === pageVersion && selection === scanSelection) {
-              showAccount();
+      const controller = await startScanner(
+        video,
+        (code) => {
+          if (
+            version !== pageVersion ||
+            query<HTMLDialogElement>("#sync-dialog").open
+          ) return false;
+          const id = cardIdFromCode(code);
+          if (!id) {
+            if (Date.now() - lastInvalidNotice > 3000) {
+              error.textContent = "That QR code is not an account card.";
+              lastInvalidNotice = Date.now();
             }
-          }).catch((failure) => {
-            if (version !== pageVersion || selection !== scanSelection) return;
-            name.textContent = "Scan a card";
-            selectedId = undefined;
-            retryCardAfter = Date.now() + 3000;
-            syncFailure(failure, () => checkAccount(id));
-          });
-        }
-        // Returning false leaves detection running, including after a successful scan.
-        return false;
-      }, showCameraError);
+            return false;
+          }
+          error.textContent = "";
+          if (id === selectedId || Date.now() < retryCardAfter) {
+            return false;
+          }
+          selectedId = id;
+          ++scanSelection;
+          const showAccount = () => {
+            activeAccount = accountCache.get(id);
+            if (!activeAccount) return;
+            name.textContent = activeAccount.name;
+            cooldown();
+            updateBalance();
+            status.textContent =
+              "Card ready. Show another card to switch accounts.";
+          };
+          if (accountCache.get(id)) {
+            showAccount();
+            void checkAccount(id);
+          } else {
+            activeAccount = undefined;
+            query<HTMLButtonElement>("#add").disabled = true;
+            query<HTMLButtonElement>("#remove").disabled = true;
+            name.textContent = "Loading...";
+            balance.textContent = "\u2014";
+            // Unknown cards need one lookup; a later scan must not be replaced by it.
+            const selection = ++scanSelection;
+            accountCache.refresh(id).then(() => {
+              if (version === pageVersion && selection === scanSelection) {
+                showAccount();
+              }
+            }).catch((failure) => {
+              if (version !== pageVersion || selection !== scanSelection) {
+                return;
+              }
+              name.textContent = "Scan a card";
+              selectedId = undefined;
+              retryCardAfter = Date.now() + 3000;
+              syncFailure(failure, () => checkAccount(id));
+            });
+          }
+          // Returning false leaves detection running, including after a successful scan.
+          return false;
+        },
+        showCameraError,
+        query<HTMLElement>(".camera-guide"),
+      );
       if (version !== pageVersion) {
         controller.stop();
         return;

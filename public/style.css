@@ -586,9 +586,18 @@ body.scanning {
 .scanner-screen {
   height: 100%;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
+  justify-items: center;
+  gap: 8px;
+  padding: max(8px, env(safe-area-inset-top)) 8px
+    max(8px, env(safe-area-inset-bottom));
+  background: #fffef9;
 }
 .camera-frame {
+  width: min(100%, 100vmin, 48vh, 440px);
+  width: min(100%, 100dvmin, 48dvh, 440px);
+  aspect-ratio: 1;
+  border-radius: 12px;
   position: relative;
   min-height: 0;
   overflow: hidden;
@@ -602,7 +611,7 @@ body.scanning {
 }
 .camera-guide {
   position: absolute;
-  width: min(60%, 48dvh);
+  width: 72%;
   aspect-ratio: 1;
   max-height: 85%;
   border: 2px solid #e6eccf;
@@ -626,20 +635,43 @@ body.scanning {
   font-size: 14px;
   line-height: 1.4;
 }
+.fullscreen-button {
+  display: grid;
+  place-items: center;
+  text-decoration: none;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 44px;
+  height: 44px;
+  border: 1px solid #fff8;
+  border-radius: 8px;
+  color: white;
+  background: #132b26d9;
+  font-size: 28px;
+  line-height: 1;
+}
+.scanner-exit {
+  left: 8px;
+  right: auto;
+}
 .scan-result {
   position: relative;
+  width: 100%;
+  max-width: 640px;
+  height: 100%;
+  min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto minmax(80px, 1fr);
   align-items: center;
-  gap: 8px 16px;
-  padding: 16px max(16px, env(safe-area-inset-right))
-    max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
-  background: #fffef9;
+  gap: 12px;
+  padding: 8px max(8px, env(safe-area-inset-right)) 8px
+    max(8px, env(safe-area-inset-left));
+  text-align: center;
 }
 .scan-result h1 {
-  grid-column: 1 / -1;
   margin: 0;
-  font: 500 clamp(20px, 4vw, 32px)/1.15 ui-sans-serif, system-ui, sans-serif;
+  font: 650 clamp(28px, 6vw, 44px)/1.15 ui-sans-serif, system-ui, sans-serif;
   letter-spacing: -.5px;
   overflow: hidden;
   display: -webkit-box;
@@ -648,20 +680,29 @@ body.scanning {
 }
 .scan-result .credit-value {
   margin: 0;
-  font-size: clamp(36px, 8vw, 64px);
+  font-size: clamp(24px, 5vw, 34px);
   line-height: 1.1;
-  letter-spacing: -2px;
+  letter-spacing: -.5px;
   overflow-wrap: normal;
+}
+.scan-result .credit-value::after {
+  content: " credits";
+  font-size: 16px;
+  letter-spacing: 0;
+  color: #63746a;
 }
 .scan-result .credit-actions {
   flex-direction: row;
-  gap: 12px;
+  gap: 16px;
+  height: 100%;
+  max-height: 128px;
 }
 .scan-result .credit-actions .button {
-  width: clamp(56px, 13vw, 80px);
-  min-height: 56px;
+  flex: 1;
+  min-width: 0;
+  min-height: 80px;
   padding: 0;
-  font-size: 36px;
+  font-size: 52px;
   line-height: 1;
   touch-action: manipulation;
 }
@@ -682,17 +723,41 @@ body.scanning {
   font-size: 14px;
   line-height: 1.4;
 }
-@media (max-height: 450px) and (min-width: 500px) {
-  .scanner-screen {
-    grid-template-columns: minmax(0, 1fr) minmax(250px, 38%);
-    grid-template-rows: minmax(0, 1fr);
+@media (max-height: 560px) {
+  .camera-frame {
+    width: min(100%, 100dvmin, 38dvh);
   }
   .scan-result {
-    align-content: center;
-    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    padding-top: 0;
+    grid-template-rows: minmax(0, 1fr) auto minmax(64px, 1fr);
   }
-  .scan-result .credit-actions {
-    margin-top: 8px;
+  .scan-result h1 {
+    font-size: 24px;
+  }
+  .scan-result .credit-actions .button {
+    min-height: 64px;
+    font-size: 44px;
+  }
+}
+@media (orientation: landscape) {
+  .scanner-screen {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    align-items: center;
+    padding-left: max(8px, env(safe-area-inset-left));
+    padding-right: max(8px, env(safe-area-inset-right));
+  }
+  .camera-frame {
+    width: min(100%, 100vmin - 32px, 440px);
+    width: min(100%, 100dvmin - env(safe-area-inset-top) -
+      env(safe-area-inset-bottom) - 32px, 440px);
+  }
+  .scan-result {
+    max-height: 440px;
+  }
+  .scan-result h1 {
+    font-size: clamp(24px, 4vw, 40px);
   }
   .scanning .scan-warning {
     bottom: 0;

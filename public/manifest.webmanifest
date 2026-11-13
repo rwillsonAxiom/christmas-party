@@ -1,0 +1,9 @@
+{
+  "name": "Credit Cards",
+  "short_name": "Credit Cards",
+  "start_url": "./#/scan",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fffef9",
+  "theme_color": "#173f38"
+}

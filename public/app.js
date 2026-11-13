@@ -35,6 +35,33 @@ const buttonCooldown = 400;
 let readyAt = 0;
 let cooldownTimer;
 let syncRetry;
+let scannerOwnsFullscreen = false;
+function updateFullscreenControl() {
+  const button = document.querySelector("#scanner-fullscreen");
+  if (button) {
+    button.hidden = !document.fullscreenEnabled ||
+      Boolean(document.fullscreenElement);
+  }
+}
+async function enterScannerFullscreen() {
+  if (!document.fullscreenEnabled || document.fullscreenElement) return;
+  try {
+    await document.documentElement.requestFullscreen({ navigationUI: "hide" });
+    scannerOwnsFullscreen = true;
+    if (route().pathname !== "/scan") await leaveScannerFullscreen();
+  } catch {
+    /* Keep scanning in the available viewport if the browser declines. */
+  }
+  updateFullscreenControl();
+}
+async function leaveScannerFullscreen() {
+  if (!scannerOwnsFullscreen) return;
+  scannerOwnsFullscreen = false;
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+  } catch { /* The browser may already have left fullscreen. */ }
+}
+document.addEventListener("fullscreenchange", updateFullscreenControl);
 function cooldown() {
   readyAt = Date.now() + buttonCooldown;
   clearTimeout(cooldownTimer);
@@ -98,6 +125,15 @@ function renderStaffNav() {
     if (route().pathname !== "/scan") {
       const scan = element("a", "button primary", "Scan cards");
       scan.href = "#/scan";
+      scan.onclick = (event) => {
+        if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
+          return;
+        }
+        event.preventDefault();
+        location.hash = "#/scan";
+        // Fullscreen must be requested in the tap handler, before any awaits.
+        void enterScannerFullscreen();
+      };
       nav.append(scan);
     }
     const logout = element("button", "text-button", "Staff · Sign out");
@@ -442,7 +478,10 @@ async function scannerPage() {
   const version = pageVersion;
   document.title = "Scan cards · Credit Cards";
   app.innerHTML =
-    `<section class="scanner-screen" aria-label="Card scanner"><div class="camera-frame"><video id="camera-video" autoplay muted playsinline aria-label="Live card scanner"></video><div class="camera-guide" aria-hidden="true"></div><p id="camera-status" class="sr-only" role="status">Opening camera…</p><div class="camera-feedback"><p id="camera-error" role="alert"></p><button id="camera-start" class="button primary" hidden>Retry camera</button></div></div><section id="scan-result" class="scan-result" aria-label="Scanned account"><h1 id="person-name">Scan a card</h1><p id="credit-value" class="credit-value" aria-label="Available credits" aria-live="polite">—</p><div class="credit-actions"><button id="remove" class="button secondary" aria-label="Remove one credit" disabled>−</button><button id="add" class="button primary" aria-label="Add one credit" disabled>+</button></div><p id="change-status" class="sr-only" role="status"></p></section></section>`;
+    `<section class="scanner-screen" aria-label="Card scanner"><div class="camera-frame"><video id="camera-video" autoplay muted playsinline aria-label="Live card scanner"></video><div class="camera-guide" aria-hidden="true"></div><a href="#/" class="fullscreen-button scanner-exit" aria-label="Exit scanner" title="Exit scanner">&#x00D7;</a><button id="scanner-fullscreen" class="fullscreen-button" aria-label="Enter fullscreen" title="Enter fullscreen" hidden>&#x26F6;</button><p id="camera-status" class="sr-only" role="status">Opening camera…</p><div class="camera-feedback"><p id="camera-error" role="alert"></p><button id="camera-start" class="button primary" hidden>Retry camera</button></div></div><section id="scan-result" class="scan-result" aria-label="Scanned account"><h1 id="person-name">Scan a card</h1><p id="credit-value" class="credit-value" aria-label="Available credits" aria-live="polite">—</p><div class="credit-actions"><button id="remove" class="button secondary" aria-label="Remove one credit" disabled>−</button><button id="add" class="button primary" aria-label="Add one credit" disabled>+</button></div><p id="change-status" class="sr-only" role="status"></p></section></section>`;
+  document.querySelector("#scanner-fullscreen").onclick =
+    enterScannerFullscreen;
+  updateFullscreenControl();
   const video = document.querySelector("#camera-video");
   const status = document.querySelector("#camera-status");
   const error = document.querySelector("#camera-error");
@@ -546,6 +585,7 @@ async function scannerPage() {
 }
 
 async function renderPage() {
+  if (route().pathname !== "/scan") void leaveScannerFullscreen();
   document.body.classList.remove("scanning");
   camera?.stop();
   camera = undefined;

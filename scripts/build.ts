@@ -28,6 +28,7 @@ for (
   const file of [
     "app.js",
     "account-cache.js",
+    "manifest.webmanifest",
     "style.css",
     "scanner.js",
     "qr-LICENSE.txt",

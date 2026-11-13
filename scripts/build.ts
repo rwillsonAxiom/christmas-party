@@ -22,25 +22,31 @@ if (url.username || url.password || url.search || url.hash) {
 await Deno.mkdir("dist", { recursive: true });
 const html = (await Deno.readTextFile("public/index.html"))
   .replace("connect-src 'self';", `connect-src 'self' ${url.origin};`)
-  .replace("img-src 'self';", `img-src 'self' ${url.origin};`);
+  .replace("img-src 'self';", `img-src 'self' ${url.origin};`)
+  .replace(
+    'name="credit-cards-api" content=""',
+    `name="credit-cards-api" content="${url.href.replace(/\/$/, "")}"`,
+  );
 await Deno.writeTextFile("dist/index.html", html);
 for (
   const file of [
     "app.js",
-    "account-cache.js",
     "manifest.webmanifest",
     "style.css",
-    "scanner.js",
     "qr-LICENSE.txt",
   ]
 ) {
   await Deno.copyFile(`public/${file}`, `dist/${file}`);
 }
-await Deno.writeTextFile(
-  "dist/config.js",
-  `export const config = ${
-    JSON.stringify({ apiBaseUrl: url.href.replace(/\/$/, "") })
-  };\n`,
-);
 await Deno.writeTextFile("dist/.nojekyll", "");
+// These were separate generated assets before the TypeScript frontend bundle.
+for (
+  const file of ["config.js", "scanner.js", "account-cache.js", "views.js"]
+) {
+  try {
+    await Deno.remove(`dist/${file}`);
+  } catch (error) {
+    if (!(error instanceof Deno.errors.NotFound)) throw error;
+  }
+}
 console.log("Built static frontend in dist/.");

@@ -1,20 +1,34 @@
+import {
+  type Account,
+  type Api,
+  asError,
+  type CreditOperation,
+} from "./types.ts";
+
 // Confirmed server records and unacknowledged deltas are kept separately.
 // Reads can never replace a record while its writes are pending.
 export class AccountCache {
-  constructor({ api, cacheStorage, queueStorage, key, onChange, onError }) {
-    Object.assign(this, {
-      api,
-      cacheStorage,
-      queueStorage,
-      key,
-      onChange,
-      onError,
-    });
-    this.records = new Map();
-    this.revisions = new Map();
-    this.queue = [];
-    this.running = false;
-    this.failed = false;
+  private readonly api!: Api;
+  private readonly cacheStorage?: Pick<Storage, "getItem" | "setItem">;
+  private readonly queueStorage?: Pick<Storage, "getItem" | "setItem">;
+  private readonly key!: string;
+  private readonly onChange!: () => void;
+  private readonly onError!: (error: Error) => void;
+  private readonly records = new Map<string, Account>();
+  private readonly revisions = new Map<string, number>();
+  queue: CreditOperation[] = [];
+  running = false;
+  failed = false;
+  constructor(options: {
+    api: Api;
+    cacheStorage?: Pick<Storage, "getItem" | "setItem">;
+    queueStorage?: Pick<Storage, "getItem" | "setItem">;
+    key: string;
+    onChange: () => void;
+    onError: (error: Error) => void;
+  }) {
+    Object.assign(this, options);
+    const { cacheStorage, queueStorage, key } = options;
     try {
       for (const account of JSON.parse(cacheStorage?.getItem(key) || "[]")) {
         this.remember(account);
@@ -31,7 +45,7 @@ export class AccountCache {
     } catch { /* Unavailable session storage leaves this tab's queue empty. */ }
   }
 
-  remember(account) {
+  remember(account: Account) {
     if (
       !account || typeof account.id !== "string" ||
       typeof account.name !== "string" ||
@@ -41,7 +55,7 @@ export class AccountCache {
     this.records.set(account.id, { ...account });
   }
 
-  get(id) {
+  get(id: string) {
     const record = this.records.get(id);
     if (!record) return;
     const balance = this.queue.filter((op) => op.accountId === id)
@@ -50,19 +64,19 @@ export class AccountCache {
   }
 
   list() {
-    return [...this.records.keys()].map((id) => this.get(id))
+    return [...this.records.keys()].map((id) => this.get(id)!)
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  pending(id) {
+  pending(id: string) {
     return this.queue.some((op) => op.accountId === id);
   }
 
-  revision(id) {
+  revision(id: string) {
     return this.revisions.get(id) || 0;
   }
 
-  changed(id) {
+  changed(id: string) {
     this.revisions.set(id, this.revision(id) + 1);
   }
 
@@ -84,7 +98,7 @@ export class AccountCache {
     } catch { /* Account reads can still use the in-memory cache. */ }
   }
 
-  async refresh(id) {
+  async refresh(id: string) {
     if (this.pending(id)) return this.get(id);
     const revision = this.revision(id);
     const account = await this.api(`/api/accounts/${id}`);
@@ -98,7 +112,9 @@ export class AccountCache {
 
   async refreshAll() {
     const revisions = new Map(this.revisions);
-    const { accounts } = await this.api("/api/accounts");
+    const { accounts } = await this.api<{ accounts: Account[] }>(
+      "/api/accounts",
+    );
     for (const account of accounts) {
       if (
         !this.pending(account.id) &&
@@ -109,7 +125,7 @@ export class AccountCache {
     this.onChange();
   }
 
-  enqueue(accountId, delta, requestId) {
+  enqueue(accountId: string, delta: 1 | -1, requestId: string) {
     if (this.failed) {
       throw new Error("Retry the queued changes before making more changes.");
     }
@@ -160,16 +176,19 @@ export class AccountCache {
           } catch (error) {
             // Retrying an acknowledged receipt is safe, even if saving the
             // acknowledgement locally failed. Keep its original base meanwhile.
-            this.records.set(accountId, previous);
+            if (previous) this.records.set(accountId, previous);
+            else this.records.delete(accountId);
             this.queue.unshift(operation);
             throw error;
           }
           this.onChange();
-        } catch (error) {
+        } catch (caught) {
+          const error = asError(caught);
           this.failed = true;
           // A definitive rejection did not apply. Undo its optimistic delta.
           // Network/server/auth failures keep the receipt for an identical retry.
-          const rejected = error.status >= 400 && error.status < 500 &&
+          const rejected = error.status !== undefined && error.status >= 400 &&
+            error.status < 500 &&
             ![401, 403, 408, 429].includes(error.status);
           if (rejected && this.queue[0] === operation) {
             // Later changes for this account were based on the rejected balance.

@@ -46,6 +46,21 @@ Edge Function** and stores accounts, sessions and retry receipts in
 - Staff can create accounts and print individual cards or all cards. Names and
   balances are public. Account creation and credit updates require a session.
 
+## Frontend source
+
+The website source lives in `web/index.tsx` (routing and interactions),
+`web/views.tsx` (JSX layouts), `web/account-cache.ts` (cached accounts and update
+queue), and `web/types.ts` (shared frontend types). JSX uses
+`jsr:@reububble/jsx@0.0.12`, added with `deno add` and pinned in `deno.lock`.
+Views create native DOM nodes; account names remain text, and balance updates
+keep the live camera element mounted. The runtime and QR decoder are bundled
+locally; there are no browser imports from JSR or a CDN.
+
+Run `deno task client:build` to generate `public/app.js`. F5, development, checks,
+tests and the Pages build compile this automatically. Edit the TypeScript/TSX
+sources; the generated JavaScript is ignored by Git. Static CSS, the HTML entry
+page and the web manifest remain in `public/`.
+
 ## First deployment: GitHub Pages and Supabase Free
 
 Use the contents of **this `credit-cards` directory as the repository root**.
@@ -118,8 +133,8 @@ The production API base address is:
 https://PROJECT_REF.supabase.co/functions/v1/credit-cards
 ```
 
-Only `dist/` is uploaded to Pages. The generated `dist/config.js` contains that
-public API address and no secrets. Our function intentionally sets
+Only `dist/` is uploaded to Pages. The generated `dist/index.html` contains that
+public API address in a metadata tag and no secrets. Our function intentionally sets
 `verify_jwt = false`: anonymous viewers use public reads, and staff writes are
 protected by our own opaque bearer sessions, rather than Supabase JWTs.
 
@@ -138,7 +153,7 @@ on this workstation. The tools can be on `PATH`, in a standard Windows
 Open `credit-cards.code-workspace` and press **F5**, then visit
 `http://localhost:8000`. F5 automatically:
 
-1. Builds the scanner.
+1. Compiles the TypeScript frontend, JSX views and scanner into `public/app.js`.
 2. Creates and starts a dedicated PostgreSQL cluster in `data/dev-postgres`,
    bound to `127.0.0.1:15433`.
 3. Creates `credit_cards_dev` and applies any pending migrations, with checksum
@@ -258,8 +273,8 @@ expiry, CORS, QR encoding/decoding, malformed decoder inputs and untrusted scan
 contents.
 
 QR generation and decoding use **`jsr:@paulmillr/qr@0.7.2`**, pinned and
-recorded in `deno.lock`. The camera module bundles locally into
-`public/scanner.js`, then ships with the static site; no QR code CDN is loaded
+recorded in `deno.lock`. The camera module bundles locally with the TypeScript frontend into
+`public/app.js`, then ships with the static site; no QR code CDN is loaded
 in the browser. Its license ships in `qr-LICENSE.txt`. See
 `dependency-review.txt` for source-review scope, findings, integration
 precautions and the exact source hashes reviewed.

@@ -1,4 +1,4 @@
-import { AccountCache } from "../public/account-cache.js";
+import { AccountCache } from "../web/account-cache.ts";
 
 function assert(value, message = "Assertion failed") {
   if (!value) throw new Error(message);

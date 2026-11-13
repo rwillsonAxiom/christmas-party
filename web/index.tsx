@@ -1,13 +1,35 @@
-import { config } from "./config.js";
-import { AccountCache } from "./account-cache.js";
+import * as views from "./views.tsx";
+import {
+  type Account,
+  asError,
+  type LoginResponse,
+  RequestError,
+  type Session,
+} from "./types.ts";
+import { AccountCache } from "./account-cache.ts";
 
-const apiBase = config.apiBaseUrl.replace(/\/$/, "");
+function optional<T extends HTMLElement = HTMLElement>(
+  selector: string,
+): T | null {
+  return document.querySelector<T>(selector);
+}
+function query<T extends HTMLElement = HTMLElement>(selector: string): T {
+  const node = optional<T>(selector);
+  if (!node) throw new Error(`Missing page element: ${selector}`);
+  return node;
+}
+
+document.body.replaceChildren(...views.shell());
+
+const apiBase =
+  (document.querySelector<HTMLMetaElement>('meta[name="credit-cards-api"]')
+    ?.content || "").replace(/\/$/, "");
 const storageKey = `credit-cards:staff:${apiBase || location.origin}`;
-let sessionToken;
+let sessionToken: string | null = null;
 try {
   sessionToken = localStorage.getItem(storageKey);
 } catch { /* Memory-only session if browser storage is disabled. */ }
-function saveToken(token) {
+function saveToken(token: string | null) {
   sessionToken = token;
   try {
     if (token) localStorage.setItem(storageKey, token);
@@ -15,8 +37,8 @@ function saveToken(token) {
   } catch { /* Continue for this tab. */ }
 }
 const route = () => new URL(location.hash.slice(1) || "/", location.origin);
-const apiUrl = (path) => `${apiBase}${path}`;
-function browserStorage(name) {
+const apiUrl = (path: string) => `${apiBase}${path}`;
+function browserStorage(name: "localStorage" | "sessionStorage") {
   try {
     return globalThis[name];
   } catch {
@@ -33,11 +55,11 @@ const accountCache = new AccountCache({
 });
 const buttonCooldown = 400;
 let readyAt = 0;
-let cooldownTimer;
-let syncRetry;
+let cooldownTimer: ReturnType<typeof setTimeout> | undefined;
+let syncRetry: (() => void | Promise<void>) | undefined;
 let scannerOwnsFullscreen = false;
 function updateFullscreenControl() {
-  const button = document.querySelector("#scanner-fullscreen");
+  const button = optional<HTMLButtonElement>("#scanner-fullscreen");
   if (button) {
     button.hidden = !document.fullscreenEnabled ||
       Boolean(document.fullscreenElement);
@@ -66,7 +88,7 @@ function cooldown() {
   readyAt = Date.now() + buttonCooldown;
   clearTimeout(cooldownTimer);
   cooldownTimer = setTimeout(() => {
-    if (activeAccount && document.querySelector("#credit-value")) {
+    if (activeAccount && optional<HTMLElement>("#credit-value")) {
       updateBalance();
     }
   }, buttonCooldown);
@@ -75,55 +97,63 @@ function renderCachedAccounts() {
   accounts = accountCache.list();
   if (activeAccount) {
     activeAccount = accountCache.get(activeAccount.id);
-    if (activeAccount && document.querySelector("#credit-value")) {
-      document.querySelector("#person-name").textContent = activeAccount.name;
+    if (activeAccount && optional<HTMLElement>("#credit-value")) {
+      query<HTMLElement>("#person-name").textContent = activeAccount.name;
       updateBalance();
     }
   }
-  if (document.querySelector("#account-list")) renderList();
+  if (optional<HTMLElement>("#account-list")) renderList();
 }
-function syncFailure(error, retry) {
+function syncFailure(error: Error, retry: () => void | Promise<void>) {
   syncRetry = accountCache.failed ? () => accountCache.retry() : retry;
-  const dialog = document.querySelector("#sync-dialog");
-  document.querySelector("#sync-later").hidden = accountCache.failed;
-  document.querySelector("#sync-error").textContent = error.message;
+  const dialog = query<HTMLDialogElement>("#sync-dialog");
+  query<HTMLButtonElement>("#sync-later").hidden = accountCache.failed;
+  query<HTMLElement>("#sync-error").textContent = error.message;
   if (!dialog.open) dialog.showModal();
 }
-async function checkAccount(id) {
+async function checkAccount(id: string) {
   try {
     await accountCache.refresh(id);
-  } catch (error) {
+  } catch (caught) {
+    const error = asError(caught);
     syncFailure(error, () => checkAccount(id));
   }
 }
 async function checkAllAccounts() {
   try {
     await accountCache.refreshAll();
-  } catch (error) {
+  } catch (caught) {
+    const error = asError(caught);
     syncFailure(error, checkAllAccounts);
   }
 }
 let pageVersion = 0;
-let camera;
-const app = document.querySelector("#app");
-const message = document.querySelector("#message");
-const printArea = document.querySelector("#print-cards");
-let accounts = [];
-let activeAccount;
-let noticeTimer;
+let camera:
+  | Awaited<ReturnType<typeof import("../scanner.ts").startScanner>>
+  | undefined;
+const app = query<HTMLElement>("#app");
+const message = query<HTMLElement>("#message");
+const printArea = query<HTMLElement>("#print-cards");
+let accounts: Account[] = [];
+let activeAccount: Account | undefined;
+let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 let authenticated = false;
 
 function renderStaffNav() {
-  let nav = document.querySelector("#staff-nav");
+  let nav = optional<HTMLDivElement>("#staff-nav");
   if (!nav) {
-    nav = element("div", "staff-nav");
+    nav = element("div", "staff-nav") as HTMLDivElement;
     nav.id = "staff-nav";
-    document.querySelector(".topbar").append(nav);
+    query<HTMLElement>(".topbar").append(nav);
   }
   nav.replaceChildren();
   if (authenticated) {
     if (route().pathname !== "/scan") {
-      const scan = element("a", "button primary", "Scan cards");
+      const scan = element(
+        "a",
+        "button primary",
+        "Scan cards",
+      ) as HTMLAnchorElement;
       scan.href = "#/scan";
       scan.onclick = (event) => {
         if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
@@ -136,7 +166,11 @@ function renderStaffNav() {
       };
       nav.append(scan);
     }
-    const logout = element("button", "text-button", "Staff · Sign out");
+    const logout = element(
+      "button",
+      "text-button",
+      "Staff · Sign out",
+    ) as HTMLButtonElement;
     logout.onclick = async () => {
       logout.disabled = true;
       try {
@@ -145,7 +179,8 @@ function renderStaffNav() {
         authenticated = false;
         renderStaffNav();
         await renderPage();
-      } catch (error) {
+      } catch (caught) {
+        const error = asError(caught);
         notice(error.message, true);
       } finally {
         logout.disabled = false;
@@ -153,7 +188,11 @@ function renderStaffNav() {
     };
     nav.append(logout);
   } else {
-    const login = element("a", "button secondary", "Staff sign in");
+    const login = element(
+      "a",
+      "button secondary",
+      "Staff sign in",
+    ) as HTMLAnchorElement;
     login.href = `#/login?returnTo=${
       encodeURIComponent(
         route().pathname === "/login" ? "/" : route().pathname,
@@ -174,21 +213,21 @@ function loginPage() {
     return;
   }
   document.title = "Staff sign in · Credit Cards";
-  app.innerHTML =
-    `<section class="panel login-panel"><p class="eyebrow">STAFF ACCESS</p><h1>Sign in.</h1><p>Enter the staff password to create accounts and adjust credits.</p><form id="login-form"><label for="password">Staff password</label><input id="password" name="password" type="password" autocomplete="current-password" maxlength="1024" required><button class="button primary" type="submit">Sign in</button><p id="login-error" class="inline-error" role="alert"></p></form><a class="back-link" id="viewer-link">Continue as a viewer</a></section>`;
-  document.querySelector("#viewer-link").href = `#${returnTo}`;
-  document.querySelector("#login-form").addEventListener(
+  app.replaceChildren(views.login());
+  query<HTMLAnchorElement>("#viewer-link").href = `#${returnTo}`;
+  query<HTMLFormElement>("#login-form").addEventListener(
     "submit",
     async (event) => {
       event.preventDefault();
-      const form = event.currentTarget;
-      const button = form.querySelector("button");
-      const error = document.querySelector("#login-error");
+      const form = event.currentTarget as HTMLFormElement;
+      const button = form.querySelector("button")!;
+      const error = query<HTMLElement>("#login-error");
       error.textContent = "";
       button.disabled = true;
       try {
-        const result = await api("/api/login", {
-          password: form.elements.password.value,
+        const result = await api<LoginResponse>("/api/login", {
+          password:
+            (form.elements.namedItem("password") as HTMLInputElement).value,
         });
         saveToken(result.token);
         authenticated = true;
@@ -196,7 +235,8 @@ function loginPage() {
         renderStaffNav();
         form.reset();
         location.replace(`#${returnTo}`);
-      } catch (failure) {
+      } catch (caught) {
+        const failure = asError(caught);
         error.textContent = failure.message;
       } finally {
         button.disabled = false;
@@ -217,14 +257,11 @@ function requestId() {
   }-${hex.slice(20)}`;
 }
 
-function element(tag, className, text) {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
+function element(tag: string, className?: string, text?: string) {
+  return views.text(tag, className, text);
 }
 
-function notice(text, error = false) {
+function notice(text: string, error = false) {
   clearTimeout(noticeTimer);
   message.textContent = text;
   message.className = error ? "error" : "success";
@@ -232,7 +269,7 @@ function notice(text, error = false) {
   noticeTimer = setTimeout(() => message.hidden = true, 6000);
 }
 
-async function api(path, body) {
+async function api<T = Account>(path: string, body?: object): Promise<T> {
   const response = await fetch(
     apiUrl(path),
     {
@@ -253,36 +290,24 @@ async function api(path, body) {
       authenticated = false;
       saveToken(null);
       renderStaffNav();
-      if (activeAccount && document.querySelector("#credit-value")) {
+      if (activeAccount && optional<HTMLElement>("#credit-value")) {
         updateBalance();
       } else setDashboardAccess();
     }
-    const error = new Error(result.error || "Unable to complete the request.");
-    error.status = response.status;
+    const error = new RequestError(
+      result.error || "Unable to complete the request.",
+      response.status,
+    );
     throw error;
   }
   return result;
 }
 
-function card(account) {
-  const node = element("article", "paper-card");
-  node.append(
-    element("span", "eyebrow", "YOUR CREDIT CARD"),
-    element("h2", "card-name", account.name),
-  );
-  const qr = element("img", "qr");
-  qr.src = apiUrl(`/api/accounts/${account.id}/qr`);
-  qr.alt = `QR code for ${account.name}'s account`;
-  qr.width = qr.height = 220;
-  node.append(
-    qr,
-    element("p", "card-caption", "Scan to view your credits"),
-    element("small", "card-link", account.url),
-  );
-  return node;
+function card(account: Account) {
+  return views.card(account, apiUrl(`/api/accounts/${account.id}/qr`));
 }
 
-async function printCards(items) {
+async function printCards(items: Account[]) {
   printArea.replaceChildren(...items.map(card));
   try {
     await Promise.all(
@@ -295,41 +320,38 @@ async function printCards(items) {
 }
 
 async function dashboard() {
-  app.innerHTML = `
-    <section class="intro"><div><p class="eyebrow">THE CREDIT DESK</p><h1>Good people.<br>A little credit.</h1><p class="lede">One card for each person. One simple way to keep track.</p></div><div class="intro-seal" aria-hidden="true"><span>SCAN</span><b>+1</b><span>AND GO</span></div></section>
-    <div class="dashboard-grid"><section class="panel create-panel"><p class="eyebrow">01 / SET SOMEONE UP</p><h2>A name. A starting balance.</h2><p>Create an account, then print their card.</p>
-    <form id="create-form"><label for="name">Name</label><input id="name" name="name" placeholder="e.g. Alex Morgan" maxlength="80" required autocomplete="off"><label for="balance">Starting credits</label><input id="balance" name="balance" type="number" min="0" max="1000000" step="1" value="0" required><button class="button primary" type="submit">Create account <span aria-hidden="true">↗</span></button><p id="form-error" class="inline-error" role="alert"></p></form>
-    <div class="small-note">Cards link to this website. Their balances stay up to date when credits change.</div></section>
-    <section class="panel accounts-panel"><div class="section-heading"><div><p class="eyebrow">02 / READY TO GO</p><h2>Your accounts <span id="count" class="count">0</span></h2></div><button id="print-all" class="button secondary" disabled>Print all cards</button></div><label class="sr-only" for="search">Search accounts</label><input id="search" type="search" placeholder="Find a person…"><div id="account-list" aria-live="polite"><p class="muted">Loading accounts…</p></div></section></div>
-    <p class="access-note">Anyone can view balances. Signed-in staff can create accounts and change credits.</p>`;
+  app.replaceChildren(...views.dashboard());
   setDashboardAccess();
-  document.querySelector("#search").addEventListener("input", renderList);
-  document.querySelector("#print-all").addEventListener(
+  query<HTMLInputElement>("#search").addEventListener("input", renderList);
+  query<HTMLButtonElement>("#print-all").addEventListener(
     "click",
     () => printCards(accounts),
   );
-  document.querySelector("#create-form").addEventListener(
+  query<HTMLFormElement>("#create-form").addEventListener(
     "submit",
     async (event) => {
       event.preventDefault();
-      const form = event.currentTarget;
-      const button = form.querySelector("button");
-      const error = document.querySelector("#form-error");
+      const form = event.currentTarget as HTMLFormElement;
+      const button = form.querySelector("button")!;
+      const error = query<HTMLElement>("#form-error");
       button.disabled = true;
       error.textContent = "";
       try {
         const account = await api("/api/accounts", {
-          name: form.elements.name.value,
-          balance: Number(form.elements.balance.value),
+          name: (form.elements.namedItem("name") as HTMLInputElement).value,
+          balance: Number(
+            (form.elements.namedItem("balance") as HTMLInputElement).value,
+          ),
         });
         accountCache.remember(account);
         accountCache.persist();
         accounts = accountCache.list();
         form.reset();
-        document.querySelector("#search").value = "";
+        query<HTMLInputElement>("#search").value = "";
         renderList();
         notice(`${account.name}'s account is ready.`);
-      } catch (failure) {
+      } catch (caught) {
+        const failure = asError(caught);
         error.textContent = failure.message;
       } finally {
         button.disabled = false;
@@ -340,11 +362,11 @@ async function dashboard() {
 }
 
 function setDashboardAccess() {
-  const panel = document.querySelector(".create-panel");
+  const panel = optional<HTMLElement>(".create-panel");
   if (!panel) return;
   panel.hidden = !authenticated;
-  document.querySelector("#print-all").hidden = !authenticated;
-  document.querySelector(".dashboard-grid").classList.toggle(
+  query<HTMLButtonElement>("#print-all").hidden = !authenticated;
+  query<HTMLElement>(".dashboard-grid").classList.toggle(
     "viewer",
     !authenticated,
   );
@@ -357,11 +379,13 @@ async function loadAccounts() {
 }
 
 function renderList() {
-  document.querySelector("#count").textContent = accounts.length;
-  document.querySelector("#print-all").disabled = accounts.length === 0;
-  const query = document.querySelector("#search").value.toLowerCase();
-  const filtered = accounts.filter((a) => a.name.toLowerCase().includes(query));
-  const list = document.querySelector("#account-list");
+  query<HTMLElement>("#count").textContent = String(accounts.length);
+  query<HTMLButtonElement>("#print-all").disabled = accounts.length === 0;
+  const searchQuery = query<HTMLInputElement>("#search").value.toLowerCase();
+  const filtered = accounts.filter((a) =>
+    a.name.toLowerCase().includes(searchQuery)
+  );
+  const list = query<HTMLElement>("#account-list");
   list.replaceChildren();
   if (!filtered.length) {
     list.append(
@@ -376,31 +400,13 @@ function renderList() {
     return;
   }
   for (const account of filtered) {
-    const row = element("article", "account-row");
-    const avatar = element(
-      "span",
-      "avatar",
-      account.name.slice(0, 1).toUpperCase(),
+    list.append(
+      views.accountRow(account, authenticated, () => printCards([account])),
     );
-    avatar.setAttribute("aria-hidden", "true");
-    const link = element("a", "account-name", account.name);
-    link.href = `#/account/${account.id}`;
-    const balance = element(
-      "span",
-      "balance-pill",
-      `${account.balance.toLocaleString()} ${
-        account.balance === 1 ? "credit" : "credits"
-      }`,
-    );
-    const print = element("button", "text-button", "Print card");
-    print.onclick = () => printCards([account]);
-    row.append(avatar, link, balance);
-    if (authenticated) row.append(print);
-    list.append(row);
   }
 }
 
-async function accountPage(id) {
+async function accountPage(id: string) {
   const version = pageVersion;
   const cached = accountCache.get(id);
   if (cached) {
@@ -414,7 +420,8 @@ async function accountPage(id) {
     if (version !== pageVersion) return;
     activeAccount = accountCache.get(id);
     renderAccount();
-  } catch (error) {
+  } catch (caught) {
+    const error = asError(caught);
     if (version !== pageVersion) return;
     app.replaceChildren(
       element("h1", "error-title", "Could not load this card."),
@@ -424,34 +431,35 @@ async function accountPage(id) {
 }
 
 function renderAccount() {
-  app.innerHTML =
-    `<a class="back-link" href="#/">← All accounts</a><div class="account-layout"><section class="balance-panel"><p class="eyebrow">YOU’RE LOOKING AT</p><h1 id="person-name"></h1><p class="muted">Available credits</p><p id="credit-value" class="credit-value" aria-live="polite"></p><div class="credit-actions"><button id="remove" class="button secondary">− Remove 1</button><button id="add" class="button primary">+ Add 1</button></div><p id="change-status" class="change-status" role="status"></p><button id="refresh" class="text-button">Refresh balance</button></section><aside class="card-preview"><div id="single-card"></div><button id="print-one" class="button secondary">Print this card</button></aside></div><p class="access-note">Anyone with this card link can view the balance. Only signed-in staff can change credits.</p>`;
-  document.querySelector("#person-name").textContent = activeAccount.name;
+  if (!activeAccount) return;
+  app.replaceChildren(...views.account());
+  query<HTMLElement>("#person-name").textContent = activeAccount.name;
   document.title = `${activeAccount.name} · Credit Cards`;
-  document.querySelector("#single-card").append(card(activeAccount));
-  document.querySelector("#print-one").onclick = () =>
-    printCards([activeAccount]);
-  document.querySelector("#add").onclick = () => changeCredit(1);
-  document.querySelector("#remove").onclick = () => changeCredit(-1);
-  document.querySelector("#refresh").onclick = refreshBalance;
+  query<HTMLElement>("#single-card").append(card(activeAccount));
+  query<HTMLButtonElement>("#print-one").onclick = () =>
+    printCards(activeAccount ? [activeAccount] : []);
+  query<HTMLButtonElement>("#add").onclick = () => changeCredit(1);
+  query<HTMLButtonElement>("#remove").onclick = () => changeCredit(-1);
+  query<HTMLButtonElement>("#refresh").onclick = refreshBalance;
   updateBalance();
 }
 
 function updateBalance() {
-  document.querySelector(".credit-actions").hidden = !authenticated;
-  const print = document.querySelector("#print-one");
+  if (!activeAccount) return;
+  query<HTMLElement>(".credit-actions").hidden = !authenticated;
+  const print = optional<HTMLButtonElement>("#print-one");
   if (print) print.hidden = !authenticated;
-  document.querySelector("#credit-value").textContent = activeAccount.balance
+  query<HTMLElement>("#credit-value").textContent = activeAccount.balance
     .toLocaleString();
   const disabled = !authenticated || accountCache.failed ||
     Date.now() < readyAt;
-  document.querySelector("#add").disabled = disabled ||
+  query<HTMLButtonElement>("#add").disabled = disabled ||
     activeAccount.balance >= 1000000;
-  document.querySelector("#remove").disabled = disabled ||
+  query<HTMLButtonElement>("#remove").disabled = disabled ||
     activeAccount.balance <= 0;
 }
 
-function changeCredit(delta) {
+function changeCredit(delta: 1 | -1) {
   if (
     !activeAccount || !authenticated || accountCache.failed ||
     Date.now() < readyAt
@@ -459,7 +467,8 @@ function changeCredit(delta) {
   cooldown();
   try {
     accountCache.enqueue(activeAccount.id, delta, requestId());
-  } catch (error) {
+  } catch (caught) {
+    const error = asError(caught);
     updateBalance();
     syncFailure(error, () => accountCache.retry());
   }
@@ -467,6 +476,10 @@ function changeCredit(delta) {
 
 async function refreshBalance() {
   if (activeAccount) await checkAccount(activeAccount.id);
+}
+
+async function loadScanner() {
+  return await import("../scanner.ts");
 }
 
 async function scannerPage() {
@@ -477,22 +490,22 @@ async function scannerPage() {
   document.body.classList.add("scanning");
   const version = pageVersion;
   document.title = "Scan cards · Credit Cards";
-  app.innerHTML =
-    `<section class="scanner-screen" aria-label="Card scanner"><div class="camera-frame"><video id="camera-video" autoplay muted playsinline aria-label="Live card scanner"></video><div class="camera-guide" aria-hidden="true"></div><a href="#/" class="fullscreen-button scanner-exit" aria-label="Exit scanner" title="Exit scanner">&#x00D7;</a><button id="scanner-fullscreen" class="fullscreen-button" aria-label="Enter fullscreen" title="Enter fullscreen" hidden>&#x26F6;</button><p id="camera-status" class="sr-only" role="status">Opening camera…</p><div class="camera-feedback"><p id="camera-error" role="alert"></p><button id="camera-start" class="button primary" hidden>Retry camera</button></div></div><section id="scan-result" class="scan-result" aria-label="Scanned account"><h1 id="person-name">Scan a card</h1><p id="credit-value" class="credit-value" aria-label="Available credits" aria-live="polite">—</p><div class="credit-actions"><button id="remove" class="button secondary" aria-label="Remove one credit" disabled>−</button><button id="add" class="button primary" aria-label="Add one credit" disabled>+</button></div><p id="change-status" class="sr-only" role="status"></p></section></section>`;
-  document.querySelector("#scanner-fullscreen").onclick =
+  app.replaceChildren(views.scanner());
+  query<HTMLButtonElement>("#scanner-fullscreen").onclick =
     enterScannerFullscreen;
   updateFullscreenControl();
-  const video = document.querySelector("#camera-video");
-  const status = document.querySelector("#camera-status");
-  const error = document.querySelector("#camera-error");
-  const start = document.querySelector("#camera-start");
-  const name = document.querySelector("#person-name");
-  const balance = document.querySelector("#credit-value");
+  const video = query<HTMLVideoElement>("#camera-video");
+  video.muted = true;
+  const status = query<HTMLElement>("#camera-status");
+  const error = query<HTMLElement>("#camera-error");
+  const start = query<HTMLButtonElement>("#camera-start");
+  const name = query<HTMLElement>("#person-name");
+  const balance = query<HTMLElement>("#credit-value");
   let lastInvalidNotice = 0;
   let retryCardAfter = 0;
   let scanSelection = 0;
-  let selectedId;
-  const showCameraError = (text) => {
+  let selectedId: string | undefined;
+  const showCameraError = (text: string) => {
     if (version !== pageVersion) return;
     error.textContent = text;
     start.hidden = false;
@@ -500,17 +513,18 @@ async function scannerPage() {
     camera = undefined;
     status.textContent = "Camera is off.";
   };
-  start.onclick = async () => {
+  const startCamera = async () => {
     start.hidden = true;
     start.disabled = true;
     error.textContent = "";
     status.textContent = "Opening camera…";
     try {
-      const { startScanner, cardIdFromCode } = await import("./scanner.js");
+      const { startScanner, cardIdFromCode } = await loadScanner();
       if (version !== pageVersion) return;
       const controller = await startScanner(video, (code) => {
         if (
-          version !== pageVersion || document.querySelector("#sync-dialog").open
+          version !== pageVersion ||
+          query<HTMLDialogElement>("#sync-dialog").open
         ) return false;
         const id = cardIdFromCode(code);
         if (!id) {
@@ -528,6 +542,7 @@ async function scannerPage() {
         ++scanSelection;
         const showAccount = () => {
           activeAccount = accountCache.get(id);
+          if (!activeAccount) return;
           name.textContent = activeAccount.name;
           cooldown();
           updateBalance();
@@ -539,8 +554,8 @@ async function scannerPage() {
           void checkAccount(id);
         } else {
           activeAccount = undefined;
-          document.querySelector("#add").disabled = true;
-          document.querySelector("#remove").disabled = true;
+          query<HTMLButtonElement>("#add").disabled = true;
+          query<HTMLButtonElement>("#remove").disabled = true;
           name.textContent = "Loading...";
           balance.textContent = "\u2014";
           // Unknown cards need one lookup; a later scan must not be replaced by it.
@@ -567,7 +582,8 @@ async function scannerPage() {
       camera = controller;
       start.disabled = false;
       status.textContent = "Point the camera at a card’s QR code.";
-    } catch (failure) {
+    } catch (caught) {
+      const failure = asError(caught);
       if (version !== pageVersion) return;
       showCameraError(
         failure.name === "NotAllowedError"
@@ -578,10 +594,11 @@ async function scannerPage() {
       );
     }
   };
-  document.querySelector("#add").onclick = () => changeCredit(1);
-  document.querySelector("#remove").onclick = () => changeCredit(-1);
+  start.onclick = startCamera;
+  query<HTMLButtonElement>("#add").onclick = () => changeCredit(1);
+  query<HTMLButtonElement>("#remove").onclick = () => changeCredit(-1);
   void checkAllAccounts();
-  await start.onclick();
+  await startCamera();
 }
 
 async function renderPage() {
@@ -606,7 +623,7 @@ window.addEventListener("storage", async (event) => {
   if (event.key !== storageKey) return;
   sessionToken = event.newValue;
   try {
-    ({ authenticated } = await api("/api/session"));
+    ({ authenticated } = await api<Session>("/api/session"));
     await renderPage();
   } catch {
     notice("Could not refresh staff access. Try signing in again.", true);
@@ -614,26 +631,27 @@ window.addEventListener("storage", async (event) => {
 });
 
 try {
-  ({ authenticated } = await api("/api/session"));
+  ({ authenticated } = await api<Session>("/api/session"));
   if (!authenticated) saveToken(null);
 } catch {
   notice("Could not check staff session. Showing read-only access.", true);
 }
-document.querySelector("#sync-retry").onclick = async () => {
-  document.querySelector("#sync-dialog").close();
+query<HTMLButtonElement>("#sync-retry").onclick = async () => {
+  query<HTMLDialogElement>("#sync-dialog").close();
   try {
     await syncRetry?.();
-  } catch (error) {
-    syncFailure(error, syncRetry);
+  } catch (caught) {
+    const error = asError(caught);
+    syncFailure(error, syncRetry || checkAllAccounts);
   }
 };
-document.querySelector("#sync-later").onclick = () =>
-  document.querySelector("#sync-dialog").close();
-document.querySelector("#sync-dialog").addEventListener("cancel", (event) => {
+query<HTMLButtonElement>("#sync-later").onclick = () =>
+  query<HTMLDialogElement>("#sync-dialog").close();
+query<HTMLDialogElement>("#sync-dialog").addEventListener("cancel", (event) => {
   if (accountCache.failed) event.preventDefault();
 });
-document.querySelector("#sync-sign-in").onclick = () =>
-  document.querySelector("#sync-dialog").close();
+query<HTMLAnchorElement>("#sync-sign-in").onclick = () =>
+  query<HTMLDialogElement>("#sync-dialog").close();
 window.addEventListener("online", () => {
   if (authenticated && !accountCache.failed) void accountCache.drain();
 });
@@ -650,7 +668,7 @@ if (authenticated) void accountCache.drain();
 document.addEventListener("visibilitychange", async () => {
   if (!document.hidden) {
     try {
-      const session = await api("/api/session");
+      const session = await api<Session>("/api/session");
       if (session.authenticated !== authenticated) {
         authenticated = session.authenticated;
         renderStaffNav();
@@ -660,7 +678,8 @@ document.addEventListener("visibilitychange", async () => {
       else if (!["/login", "/scan"].includes(route().pathname)) {
         await loadAccounts();
       }
-    } catch (error) {
+    } catch (caught) {
+      const error = asError(caught);
       notice(error.message, true);
     }
   }

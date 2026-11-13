@@ -1,11 +1,8 @@
-import { AccountCache } from "../public/account-cache.js";
-// Exercise the actual frontend with a small DOM and camera/API doubles.
-// Hardware detection and mobile layout still need an HTTPS phone check.
+// Exercise the generated browser bundle, including the real JSX runtime.
+// Camera hardware and layout still need an HTTPS phone check.
 const source = (await Deno.readTextFile(
   new URL("../public/app.js", import.meta.url),
-)).replace('import { config } from "./config.js";', "")
-  .replace('import { AccountCache } from "./account-cache.js";', "")
-  .replace('await import("./scanner.js")', "await scanner()");
+)).replace("await loadScanner()", "await testScanner()");
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
 function assert(value, message = "Assertion failed") {
@@ -22,19 +19,63 @@ async function setup(
     cached = true,
     fullscreen = false,
     fullscreenFailure = false,
+    initialHash = "#/scan",
+    staff = true,
+    personName = "alice",
   } = {},
 ) {
   const nodes = new Map();
-  function node() {
+  function node(tag = "div") {
     const classes = new Set();
-    return {
-      textContent: "",
+    const attributes = new Map();
+    const result = {
+      tagName: tag.toUpperCase(),
+      children: [],
+      value: "",
       hidden: false,
       disabled: false,
+      get className() {
+        return [...classes].join(" ");
+      },
+      set className(value) {
+        classes.clear();
+        value.split(" ").filter(Boolean).forEach((x) => classes.add(x));
+      },
+      get textContent() {
+        return this.children.map((x) =>
+          typeof x === "string" ? x : x.textContent
+        ).join("");
+      },
+      set textContent(value) {
+        this.replaceChildren(String(value));
+      },
+      set id(value) {
+        attributes.set("id", value);
+        nodes.set(`#${value}`, this);
+      },
+      get id() {
+        return attributes.get("id");
+      },
       classList: {
         add: (value) => classes.add(value),
         remove: (value) => classes.delete(value),
         contains: (value) => classes.has(value),
+        toggle: (value, force) =>
+          force ? classes.add(value) : classes.delete(value),
+      },
+      setAttribute(key, value) {
+        attributes.set(key, String(value));
+        if (key === "id") this.id = value;
+        else if (key === "class") this.className = value;
+        else if (key === "value") this.value = String(value);
+      },
+      getAttribute(key) {
+        return attributes.get(key);
+      },
+      toggleAttribute(key, value) {
+        if (value) attributes.set(key, "");
+        else attributes.delete(key);
+        if (key === "hidden" || key === "disabled") this[key] = value;
       },
       open: false,
       showModal() {
@@ -43,36 +84,52 @@ async function setup(
       close() {
         this.open = false;
       },
-      addEventListener() {},
-      append() {},
-      replaceChildren() {},
-      set innerHTML(html) {
-        for (const match of html.matchAll(/<[^>]+id="([^"]+)"[^>]*>/g)) {
-          const child = node();
-          child.disabled = match[0].includes(" disabled");
-          child.hidden = match[0].includes(" hidden");
-          nodes.set(`#${match[1]}`, child);
-        }
+      addEventListener(name, callback) {
+        this[`on${name}`] = callback;
+      },
+      append(...children) {
+        this.children.push(...children);
+      },
+      replaceChildren(...children) {
+        this.children = children;
+      },
+      querySelector(selector) {
+        return walk(this, selector);
+      },
+      querySelectorAll(selector) {
+        const matches = [];
+        const visit = (item) => {
+          for (const child of item.children || []) {
+            if (typeof child === "string") continue;
+            if (matchesSelector(child, selector)) matches.push(child);
+            visit(child);
+          }
+        };
+        visit(this);
+        return matches;
       },
     };
+    return result;
   }
-  for (
-    const selector of [
-      "#app",
-      "#message",
-      "#print-cards",
-      "#staff-nav",
-      "#sync-dialog",
-      "#sync-error",
-      "#sync-retry",
-      "#sync-later",
-      "#sync-sign-in",
-      ".credit-actions",
-    ]
-  ) nodes.set(selector, node());
+  function matchesSelector(item, selector) {
+    if (selector.startsWith("#")) return item.id === selector.slice(1);
+    if (selector.startsWith(".")) {
+      return item.classList.contains(selector.slice(1));
+    }
+    return item.tagName === selector.toUpperCase();
+  }
+  function walk(root, selector) {
+    for (const child of root.children || []) {
+      if (typeof child === "string") continue;
+      if (matchesSelector(child, selector)) return child;
+      const found = walk(child, selector);
+      if (found) return found;
+    }
+    return null;
+  }
   const document = {
-    body: node(),
-    querySelector: (selector) => nodes.get(selector),
+    body: node("body"),
+    querySelector: (selector) => walk(document.body, selector),
     createElement: node,
     addEventListener() {},
     fullscreenEnabled: fullscreen,
@@ -93,7 +150,7 @@ async function setup(
     addEventListener: (name, callback) => events.set(name, callback),
   };
   const location = {
-    hash: "#/scan",
+    hash: initialHash,
     origin: "https://example.test",
     replace(value) {
       this.hash = value;
@@ -108,12 +165,12 @@ async function setup(
   const fetch = async (url, options) => {
     requests.push({ url, options });
     let result;
-    if (url.endsWith("/session")) result = { authenticated: true };
+    if (url.endsWith("/session")) result = { authenticated: staff };
     else if (url === "/api/accounts") {
       result = {
         accounts: Object.entries(balances).map(([id, balance]) => ({
           id,
-          name: id,
+          name: id === "alice" ? personName : id,
           balance,
         })),
       };
@@ -121,11 +178,21 @@ async function setup(
       const id = url.split("/").at(-2);
       if (creditResult) return await creditResult;
       balances[id] += JSON.parse(options.body).delta;
-      result = { id, name: id, balance: balances[id] };
+      result = {
+        id,
+        name: id === "bob" ? "bob" : personName,
+        balance: balances[id] ?? 2,
+        url: `https://example.test/#/account/${id}`,
+      };
     } else {
       if (accountResult) return await accountResult;
       const id = url.split("/").at(-1);
-      result = { id, name: id, balance: balances[id] };
+      result = {
+        id,
+        name: id === "bob" ? "bob" : personName,
+        balance: balances[id] ?? 2,
+        url: `https://example.test/#/account/${id}`,
+      };
     }
     return { ok: true, json: () => Promise.resolve(result) };
   };
@@ -155,28 +222,24 @@ async function setup(
     setItem: (key, value) => store.set(key, value),
   };
   await new AsyncFunction(
-    "config",
     "document",
     "window",
     "location",
     "localStorage",
     "fetch",
-    "scanner",
-    "AccountCache",
+    "testScanner",
     "globalThis",
     "Date",
     "setTimeout",
     "clearTimeout",
     source,
   )(
-    { apiBaseUrl: "" },
     document,
     window,
     location,
     { getItem: () => "staff", setItem() {}, removeItem() {} },
     fetch,
     scanner,
-    AccountCache,
     { localStorage: storage, sessionStorage: storage },
     class extends Date {
       static now() {
@@ -194,6 +257,10 @@ async function setup(
     requests,
     document,
     location,
+    navigate: async (hash) => {
+      location.hash = hash;
+      await events.get("hashchange")();
+    },
     detect: (code) => detect(code),
     advance: () => {
       now += 500;
@@ -345,4 +412,48 @@ Deno.test("unsupported or declined fullscreen preserves the working scanner", as
   assert(!declined.nodes.get("#sync-dialog").open);
   declined.detect("alice");
   assert(declined.nodes.get("#person-name").textContent === "alice");
+});
+
+Deno.test("JSX dashboard keeps names as text and staff controls remain accessible", async () => {
+  const name = '<img src=x onerror="alert(1)">';
+  const ui = await setup({ initialHash: "#/", personName: name });
+  assert(ui.nodes.get("#account-list").textContent.includes(name));
+  assert(ui.nodes.get("#account-list").querySelectorAll("img").length === 0);
+  assert(
+    ui.nodes.get("#create-form").querySelector("label").getAttribute("for") ===
+      "name",
+  );
+  assert(ui.nodes.get("#print-all").disabled === false);
+  assert(ui.document.querySelector(".create-panel").hidden === false);
+  const viewer = await setup({ initialHash: "#/", staff: false });
+  assert(viewer.document.querySelector(".create-panel").hidden);
+  assert(viewer.nodes.get("#print-all").hidden);
+  assert(!viewer.nodes.get("#account-list").querySelector("button"));
+});
+
+Deno.test("JSX login and account views retain labels, balance controls and printable QR cards", async () => {
+  const login = await setup({ initialHash: "#/login", staff: false });
+  assert(
+    login.nodes.get("#login-form").querySelector("label").getAttribute(
+      "for",
+    ) === "password",
+  );
+  const id = "12f04857-96da-44c0-9b01-cab5baaa1122";
+  const account = await setup({ initialHash: `#/account/${id}` });
+  assert(account.nodes.get("#credit-value").textContent === "2");
+  assert(
+    account.nodes.get("#single-card").querySelector("img").getAttribute(
+      "src",
+    ) === `/api/accounts/${id}/qr`,
+  );
+  assert(!account.nodes.get("#add").disabled);
+  await account.navigate("#/scan");
+  const video = account.nodes.get("#camera-video");
+  assert(video.muted);
+  account.detect("alice");
+  await settle();
+  assert(
+    account.nodes.get("#camera-video") === video,
+    "Balance checks must retain the live camera element",
+  );
 });

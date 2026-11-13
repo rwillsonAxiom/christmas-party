@@ -6,6 +6,7 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="credit-cards-api" content="">
     <meta name="theme-color" content="#173f38">
     <meta http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'self'; form-action 'self'">
@@ -16,24 +17,6 @@
     <script type="module" src="./app.js"></script>
   </head>
   <body>
-    <header
-      class="topbar"><a class="brand" href="#/"><span class="brand-mark">C</span> Credit Cards</a><span class="tag">A little credit goes a long way.</span></header>
-    <main id="app">
-      <p class="loading" role="status">Loading your accounts…</p>
-    </main>
-    <div id="message" role="status" aria-live="polite" hidden></div>
-    <dialog id="sync-dialog" aria-labelledby="sync-title"
-      aria-describedby="sync-error">
-      <h2 id="sync-title">Could not sync</h2>
-      <p id="sync-error"></p>
-      <div class="sync-actions">
-        <button id="sync-later" class="button secondary">Later</button>
-        <button id="sync-retry" class="button primary">Retry</button>
-      </div>
-      <a id="sync-sign-in" class="back-link"
-        href="#/login?returnTo=%2Fscan">Staff sign in</a>
-    </dialog>
-    <section id="print-cards" aria-label="Printable account cards"></section>
-    <footer>Scan a card. Check a balance. Keep things moving.</footer>
+    <noscript>Enable JavaScript to view balances and scan cards.</noscript>
   </body>
 </html>

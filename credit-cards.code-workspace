@@ -11,7 +11,7 @@
   "tasks": {
     "version": "2.0.0",
     "tasks": [
-      { "label": "Build camera scanner", "type": "process", "command": "deno", "args": ["task", "scanner:build"], "options": { "cwd": "${workspaceFolder:credit-cards}" }, "problemMatcher": [] },
+      { "label": "Build frontend", "type": "process", "command": "deno", "args": ["task", "client:build"], "options": { "cwd": "${workspaceFolder:credit-cards}" }, "problemMatcher": [] },
       { "label": "Stop local PostgreSQL", "type": "process", "command": "deno", "args": ["task", "dev:stop"], "options": { "cwd": "${workspaceFolder:credit-cards}" }, "problemMatcher": [] }
     ]
   },
@@ -20,7 +20,7 @@
     "configurations": [
       {
         "name": "Run Credit Cards server",
-        "preLaunchTask": "Build camera scanner",
+        "preLaunchTask": "Build frontend",
         "postDebugTask": "Stop local PostgreSQL",
         "type": "node",
         "request": "launch",

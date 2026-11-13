@@ -1,6 +1,11 @@
 import encodeQR from "jsr:@paulmillr/qr@0.7.2";
 import decodeQR from "jsr:@paulmillr/qr@0.7.2/decode.js";
-import { cardIdFromCode, decodeFrame, startScanner } from "./web/scanner.ts";
+import {
+  cardIdFromCode,
+  decodeFrame,
+  decodeFrameAll,
+  startScanner,
+} from "./web/scanner.ts";
 
 function assert(
   condition: unknown,
@@ -88,6 +93,8 @@ Deno.test("both scanner decoders read only inside the overlay, excluding the res
   const url =
     "https://example.test/#/account/12f04857-96da-44c0-9b01-cab5baaa1122";
   const qr = encodeQR(url, "raw", { border: 4, scale: 3 });
+  const otherUrl = url.replace("1122", "1123");
+  const otherQr = encodeQR(otherUrl, "raw", { border: 4, scale: 3 });
   const globals = [
     "isSecureContext",
     "navigator",
@@ -117,6 +124,7 @@ Deno.test("both scanner decoders read only inside the overlay, excluding the res
         let pixels = new Uint8ClampedArray();
         let trackStopped = false;
         const found: string[] = [];
+        let latest: string[] = [];
         const errors: string[] = [];
         let previewSide = 300;
         const rect = (
@@ -184,7 +192,9 @@ Deno.test("both scanner decoders read only inside the overlay, excluding the res
           },
           getImageData: () => ({ data: pixels }),
         };
-        const populate = (position: "hidden" | "preview-edge" | "center") => {
+        const populate = (
+          position: "hidden" | "preview-edge" | "center" | "multiple",
+        ) => {
           source = new Uint8ClampedArray(width * height * 4).fill(255);
           const x = position === "center"
             ? Math.floor((width - qr.length) / 2)
@@ -194,13 +204,23 @@ Deno.test("both scanner decoders read only inside the overlay, excluding the res
           const y = position !== "hidden"
             ? Math.floor((height - qr.length) / 2)
             : 0;
-          for (let row = 0; row < qr.length; row++) {
-            for (let col = 0; col < qr.length; col++) {
-              const offset = ((y + row) * width + x + col) * 4;
-              source[offset] =
-                source[offset + 1] =
-                source[offset + 2] =
-                  qr[row][col] ? 0 : 255;
+          const symbols = position === "multiple" ? [qr, otherQr] : [qr];
+          for (let i = 0; i < symbols.length; i++) {
+            const symbol = symbols[i];
+            const px = position === "multiple"
+              ? Math.floor(width / 2 - qr.length - 10 + i * (qr.length + 20))
+              : x;
+            const py = position === "multiple"
+              ? Math.floor((height - qr.length) / 2)
+              : y;
+            for (let row = 0; row < symbol.length; row++) {
+              for (let col = 0; col < symbol.length; col++) {
+                const offset = ((py + row) * width + px + col) * 4;
+                source[offset] =
+                  source[offset + 1] =
+                  source[offset + 2] =
+                    symbol[row][col] ? 0 : 255;
+              }
             }
           }
         };
@@ -243,17 +263,31 @@ Deno.test("both scanner decoders read only inside the overlay, excluding the res
                   image === canvas,
                   "Native detection must receive the crop, never the video",
                 );
-                const code = decodeFrame(pixels, canvas.width, canvas.height);
-                return Promise.resolve(code ? [{ rawValue: code }] : []);
+                return decodeFrameAll(pixels, canvas.width, canvas.height).then(
+                  (codes) =>
+                    codes.map((code) => ({
+                      rawValue: code.value,
+                      cornerPoints: code.corners,
+                    })),
+                );
               }
             }
             : undefined,
         );
         const scanner = await startScanner(
           video as unknown as HTMLVideoElement,
-          (code) => {
-            found.push(code);
-            return false;
+          (codes) => {
+            latest = codes.map((code) => code.value);
+            found.push(...codes.map((code) => code.value));
+            for (const code of codes) {
+              for (const point of code.corners) {
+                assert(
+                  point.x > .14 && point.x < .86 && point.y > .14 &&
+                    point.y < .86,
+                  "Returned corners must map inside the preview's inner guide",
+                );
+              }
+            }
           },
           (error) => errors.push(error),
           guide as unknown as HTMLElement,
@@ -284,6 +318,18 @@ Deno.test("both scanner decoders read only inside the overlay, excluding the res
             }, ${width}x${height})`,
           );
           assert(errors.length === 0);
+          if (Math.min(width, height) >= 900) {
+            populate("multiple");
+            await nextFrame!(800);
+            assert(
+              latest.length === 2 && latest.includes(url) &&
+                latest.includes(otherUrl),
+              "Both cards inside the overlay must be returned together",
+            );
+          }
+          source.fill(255);
+          await nextFrame!(1000);
+          assert(latest.length === 0, "A blank frame must clear old outlines");
         } finally {
           scanner.stop();
         }

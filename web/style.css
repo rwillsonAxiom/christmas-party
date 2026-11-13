@@ -624,11 +624,65 @@ body.scanning {
   transform: translate(-50%, -50%);
   pointer-events: none;
 }
+.qr-targets {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.qr-target {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  color: white;
+  background: transparent;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+.qr-target.is-selected {
+  color: #d0f58a;
+}
+.qr-edge {
+  position: absolute;
+  height: 3px;
+  background: currentColor;
+  transform-origin: 0 50%;
+  box-shadow: 0 0 3px #132b26;
+  pointer-events: none;
+}
+.qr-name {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  min-height: 44px;
+  width: max-content;
+  max-width: min(160px, 42vw);
+  padding: 6px 10px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  background: #132b26ed;
+  pointer-events: auto;
+}
+.qr-target:focus-visible {
+  outline: 3px solid #d0f58a;
+}
 .camera-feedback {
   position: absolute;
   inset: auto 12px 12px;
   text-align: center;
   color: #fffef9;
+  pointer-events: none;
+}
+.camera-feedback .button {
+  pointer-events: auto;
 }
 #camera-error:not(:empty) {
   margin: 0 0 8px;
@@ -639,6 +693,7 @@ body.scanning {
   line-height: 1.4;
 }
 .fullscreen-button {
+  z-index: 1;
   display: grid;
   place-items: center;
   text-decoration: none;
@@ -665,7 +720,7 @@ body.scanning {
   height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto minmax(80px, 1fr);
+  grid-template-rows: auto auto minmax(80px, 1fr);
   align-items: center;
   gap: 12px;
   padding: 8px max(8px, env(safe-area-inset-right)) 8px
@@ -674,7 +729,7 @@ body.scanning {
 }
 .scan-result h1 {
   margin: 0;
-  font: 650 clamp(28px, 6vw, 44px)/1.15 ui-sans-serif, system-ui, sans-serif;
+  font: 600 clamp(16px, 3vw, 20px)/1.2 ui-sans-serif, system-ui, sans-serif;
   letter-spacing: -.5px;
   overflow: hidden;
   display: -webkit-box;
@@ -733,10 +788,10 @@ body.scanning {
   .scan-result {
     gap: 8px;
     padding-top: 0;
-    grid-template-rows: minmax(0, 1fr) auto minmax(64px, 1fr);
+    grid-template-rows: auto auto minmax(64px, 1fr);
   }
   .scan-result h1 {
-    font-size: 24px;
+    font-size: 16px;
   }
   .scan-result .credit-actions .button {
     min-height: 64px;
@@ -760,7 +815,7 @@ body.scanning {
     max-height: 440px;
   }
   .scan-result h1 {
-    font-size: clamp(24px, 4vw, 40px);
+    font-size: clamp(16px, 3vw, 20px);
   }
   .scanning .scan-warning {
     bottom: 0;

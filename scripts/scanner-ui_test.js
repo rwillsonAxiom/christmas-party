@@ -18,6 +18,28 @@ async function settle() {
   for (let i = 0; i < 20; i++) await Promise.resolve();
 }
 
+const accountIds = {
+  alice: "12f04857-96da-44c0-9b01-cab5baaa1122",
+  bob: "12f04857-96da-44c0-9b01-cab5baaa1123",
+  unknown: "12f04857-96da-44c0-9b01-cab5baaa1124",
+};
+const cardCode = (name) =>
+  `https://example.test/#/account/${accountIds[name] || name}`;
+const fixtureName = (id) =>
+  Object.keys(accountIds).find((key) => accountIds[key] === id) || id;
+
+function detected(name, left = .2) {
+  return {
+    value: cardCode(name),
+    corners: [
+      { x: left, y: .3 },
+      { x: left + .2, y: .28 },
+      { x: left + .22, y: .5 },
+      { x: left + .02, y: .52 },
+    ],
+  };
+}
+
 async function setup(
   {
     cameraFailure = false,
@@ -35,6 +57,8 @@ async function setup(
     const attributes = new Map();
     const result = {
       tagName: tag.toUpperCase(),
+      style: {},
+      parent: null,
       children: [],
       value: "",
       hidden: false,
@@ -93,7 +117,17 @@ async function setup(
         this[`on${name}`] = callback;
       },
       append(...children) {
+        for (const child of children) {
+          if (typeof child !== "string") child.parent = this;
+        }
         this.children.push(...children);
+      },
+      remove() {
+        if (this.parent) {
+          this.parent.children = this.parent.children.filter((child) =>
+            child !== this
+          );
+        }
       },
       replaceChildren(...children) {
         this.children = children;
@@ -174,7 +208,7 @@ async function setup(
     else if (url === "/api/accounts") {
       result = {
         accounts: Object.entries(balances).map(([id, balance]) => ({
-          id,
+          id: accountIds[id],
           name: id === "alice" ? personName : id,
           balance,
         })),
@@ -182,11 +216,11 @@ async function setup(
     } else if (url.endsWith("/credits")) {
       const id = url.split("/").at(-2);
       if (creditResult) return await creditResult;
-      balances[id] += JSON.parse(options.body).delta;
+      balances[fixtureName(id)] += JSON.parse(options.body).delta;
       result = {
         id,
-        name: id === "bob" ? "bob" : personName,
-        balance: balances[id] ?? 2,
+        name: fixtureName(id) === "bob" ? "bob" : personName,
+        balance: balances[fixtureName(id)] ?? 2,
         url: `https://example.test/#/account/${id}`,
       };
     } else {
@@ -194,8 +228,8 @@ async function setup(
       const id = url.split("/").at(-1);
       result = {
         id,
-        name: id === "bob" ? "bob" : personName,
-        balance: balances[id] ?? 2,
+        name: fixtureName(id) === "bob" ? "bob" : personName,
+        balance: balances[fixtureName(id)] ?? 2,
         url: `https://example.test/#/account/${id}`,
       };
     }
@@ -217,8 +251,8 @@ async function setup(
     store.set(
       "credit-cards:accounts:https://example.test",
       JSON.stringify([
-        { id: "alice", name: "alice", balance: 2 },
-        { id: "bob", name: "bob", balance: 0 },
+        { id: accountIds.alice, name: "alice", balance: 2 },
+        { id: accountIds.bob, name: "bob", balance: 0 },
       ]),
     );
   }
@@ -266,7 +300,29 @@ async function setup(
       location.hash = hash;
       await events.get("hashchange")();
     },
-    detect: (code) => detect(code),
+    detect: (code) => {
+      detect(
+        typeof code === "string"
+          ? [{
+            value: code === "invalid" ? "invalid" : cardCode(code),
+            corners: [
+              { x: .25, y: .25 },
+              { x: .55, y: .25 },
+              { x: .55, y: .55 },
+              { x: .25, y: .55 },
+            ],
+          }]
+          : code,
+      );
+      return false;
+    },
+    select: (label) => {
+      const button = nodes.get("#qr-targets").children.find((child) =>
+        child.getAttribute("aria-label") === `Select ${label}`
+      );
+      assert(button, `No labelled target for ${label}`);
+      button.onclick();
+    },
     advance: () => {
       now += 500;
       const callbacks = [...timers.values()];
@@ -283,7 +339,7 @@ async function setup(
   };
 }
 
-Deno.test("scanner starts automatically and switches cards without writing credits", async () => {
+Deno.test("scanner starts automatically and switches accounts only when tapped after initial selection", async () => {
   const ui = await setup();
   assert(ui.document.body.classList.contains("scanning"));
   assert(ui.nodes.get("#camera-start").hidden);
@@ -297,6 +353,11 @@ Deno.test("scanner starts automatically and switches cards without writing credi
   await settle();
   assert(ui.requests.length === count, "Same card must not reload");
   assert(ui.detect("bob") === false);
+  assert(
+    ui.nodes.get("#person-name").textContent === "alice",
+    "A new lone QR must not replace the selected account",
+  );
+  ui.select("bob");
   assert(ui.nodes.get("#add").disabled, "Disable credits while switching");
   await settle();
   assert(ui.nodes.get("#person-name").textContent === "bob");
@@ -337,7 +398,8 @@ Deno.test("cached scans and credit changes are instant while the server is delay
   );
   finishRead({
     ok: true,
-    json: () => Promise.resolve({ id: "alice", name: "alice", balance: 2 }),
+    json: () =>
+      Promise.resolve({ id: accountIds.alice, name: "alice", balance: 2 }),
   });
   await settle();
   assert(
@@ -345,6 +407,7 @@ Deno.test("cached scans and credit changes are instant while the server is delay
     "Stale background reads cannot overwrite the edit",
   );
   ui.detect("bob");
+  ui.select("bob");
   assert(
     ui.nodes.get("#person-name").textContent === "bob",
     "Can move on before writes finish",
@@ -355,7 +418,8 @@ Deno.test("cached scans and credit changes are instant while the server is delay
   ui.setCreditResult(
     Promise.resolve({
       ok: true,
-      json: () => Promise.resolve({ id: "alice", name: "alice", balance: 3 }),
+      json: () =>
+        Promise.resolve({ id: accountIds.alice, name: "alice", balance: 3 }),
     }),
   );
   await ui.nodes.get("#sync-retry").onclick();
@@ -381,7 +445,8 @@ Deno.test("leaving scanner stops camera and ignores late account loads", async (
   assert(!ui.document.body.classList.contains("scanning"));
   finish({
     ok: true,
-    json: () => Promise.resolve({ id: "alice", name: "alice", balance: 2 }),
+    json: () =>
+      Promise.resolve({ id: accountIds.alice, name: "alice", balance: 2 }),
   });
   await settle();
   assert(ui.nodes.get("#person-name").textContent !== "alice");
@@ -461,4 +526,92 @@ Deno.test("JSX login and account views retain labels, balance controls and print
     account.nodes.get("#camera-video") === video,
     "Balance checks must retain the live camera element",
   );
+});
+
+Deno.test("multiple QR labels are selectable and moving cards never replace a selection", async () => {
+  const ui = await setup();
+  ui.detect([detected("alice"), detected("bob", .55)]);
+  const targets = ui.nodes.get("#qr-targets");
+  assert(targets.children.length === 2);
+  assert(
+    targets.textContent.includes("alice") &&
+      targets.textContent.includes("bob"),
+  );
+  assert(ui.nodes.get("#person-name").textContent === "Tap a QR code");
+  assert(ui.nodes.get("#add").disabled);
+  const aliceTarget = targets.children.find((node) => node.title === "alice");
+  assert(
+    aliceTarget.children.filter((node) => node.className === "qr-edge")
+      .length === 4,
+  );
+  const originalLeft = aliceTarget.style.left;
+  ui.detect([detected("bob", .54), detected("alice", .21)]);
+  assert(
+    targets.children.includes(aliceTarget),
+    "Movement must preserve the button during a tap",
+  );
+  assert(aliceTarget.style.left !== originalLeft, "Hit areas follow the QR");
+  ui.select("bob");
+  assert(ui.nodes.get("#person-name").textContent === "bob");
+  assert(
+    targets.children.find((node) => node.title === "bob").getAttribute(
+      "aria-pressed",
+    ) === "true",
+  );
+  ui.detect("alice");
+  assert(
+    ui.nodes.get("#person-name").textContent === "bob",
+    "A different lone card must not steal selection",
+  );
+  assert(targets.children.length === 1, "Missing QR outlines must disappear");
+  ui.select("alice");
+  assert(ui.nodes.get("#person-name").textContent === "alice");
+  assert(
+    ui.nodes.get("#add").disabled,
+    "Tapping a new account starts the cooldown",
+  );
+  ui.advance();
+  ui.nodes.get("#add").onclick();
+  await settle();
+  const writes = ui.requests.filter(({ options }) => options.method === "POST");
+  assert(
+    writes.length === 1 && writes[0].url.includes(accountIds.alice),
+    "Only the selected account can receive a credit",
+  );
+  ui.detect([]);
+  assert(targets.children.length === 0);
+  ui.detect("bob");
+  assert(ui.nodes.get("#person-name").textContent === "alice");
+});
+
+Deno.test("background name lookups label unselected QRs without changing the tapped account", async () => {
+  const ui = await setup();
+  let finish;
+  ui.setAccountResult(new Promise((resolve) => finish = resolve));
+  ui.detect([detected("unknown"), detected("alice", .55)]);
+  const targets = ui.nodes.get("#qr-targets");
+  assert(targets.textContent.includes("Loading name"));
+  const unknownTarget = targets.children.find((node) =>
+    node.title.includes("Loading")
+  );
+  unknownTarget.onclick();
+  ui.select("alice");
+  const name = '<img src=x onerror="alert(1)">';
+  finish({
+    ok: true,
+    json: () => Promise.resolve({ id: accountIds.unknown, name, balance: 7 }),
+  });
+  await settle();
+  assert(
+    ui.nodes.get("#person-name").textContent === "alice",
+    "A late name lookup must not change selection",
+  );
+  assert(unknownTarget.textContent.includes(name));
+  assert(
+    unknownTarget.querySelectorAll("img").length === 0,
+    "Overlay names remain text",
+  );
+  assert(unknownTarget.getAttribute("aria-pressed") === "false");
+  ui.select(name);
+  assert(ui.nodes.get("#credit-value").textContent === "7");
 });

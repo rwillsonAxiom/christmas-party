@@ -7,7 +7,8 @@ import {
   type Session,
 } from "./types.ts";
 import { AccountCache } from "./account-cache.ts";
-import { cardIdFromCode, startScanner } from "./scanner.ts";
+import { cardIdFromCode, type ScannedCode, startScanner } from "./scanner.ts";
+import { type AccountTarget, ScanTargets } from "./scan-targets.tsx";
 
 function optional<T extends HTMLElement = HTMLElement>(
   selector: string,
@@ -104,6 +105,7 @@ function renderCachedAccounts() {
     }
   }
   if (optional<HTMLElement>("#account-list")) renderList();
+  renderScanTargets?.();
 }
 function syncFailure(error: Error, retry: () => void | Promise<void>) {
   syncRetry = accountCache.failed ? () => accountCache.retry() : retry;
@@ -139,6 +141,7 @@ let accounts: Account[] = [];
 let activeAccount: Account | undefined;
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 let authenticated = false;
+let renderScanTargets: (() => void) | undefined;
 
 function renderStaffNav() {
   let nav = optional<HTMLDivElement>("#staff-nav");
@@ -503,11 +506,95 @@ async function scannerPage() {
   const name = query<HTMLElement>("#person-name");
   const balance = query<HTMLElement>("#credit-value");
   let lastInvalidNotice = 0;
-  let retryCardAfter = 0;
-  let scanSelection = 0;
   let selectedId: string | undefined;
+  let visible: AccountTarget[] = [];
+  const lookups = new Map<string, Promise<void>>();
+  const retryAfter = new Map<string, number>();
+  const targets = new ScanTargets(query<HTMLElement>("#qr-targets"), (id) => {
+    if (visible.some((target) => target.accountId === id)) selectAccount(id);
+  });
+  const refreshTargets = () => {
+    if (version !== pageVersion) return;
+    targets.update(visible, selectedId, (id) => accountCache.get(id)?.name);
+    if (selectedId && !activeAccount) {
+      const account = accountCache.get(selectedId);
+      if (account) {
+        activeAccount = account;
+        name.textContent = account.name;
+        updateBalance();
+      }
+    }
+  };
+  renderScanTargets = refreshTargets;
+  const loadAccount = (id: string): Promise<void> => {
+    const pending = lookups.get(id);
+    if (pending) return pending;
+    if (Date.now() < (retryAfter.get(id) || 0)) return Promise.resolve();
+    const task = accountCache.refresh(id).then(() => {}).catch((caught) => {
+      if (version !== pageVersion) return;
+      retryAfter.set(id, Date.now() + 5000);
+      syncFailure(asError(caught), () => {
+        retryAfter.delete(id);
+        return loadAccount(id);
+      });
+    }).finally(() => lookups.delete(id));
+    lookups.set(id, task);
+    return task;
+  };
+  function selectAccount(id: string) {
+    if (
+      version !== pageVersion ||
+      query<HTMLDialogElement>("#sync-dialog").open || id === selectedId
+    ) return;
+    selectedId = id;
+    cooldown();
+    activeAccount = accountCache.get(id);
+    if (activeAccount) {
+      name.textContent = activeAccount.name;
+      updateBalance();
+    } else {
+      name.textContent = "Loading name…";
+      balance.textContent = "\u2014";
+      query<HTMLButtonElement>("#add").disabled = true;
+      query<HTMLButtonElement>("#remove").disabled = true;
+    }
+    refreshTargets();
+    void loadAccount(id);
+    status.textContent =
+      "Account selected. Tap another labelled QR code to switch.";
+  }
+  const onCodes = (codes: ScannedCode[]) => {
+    if (version !== pageVersion) return;
+    visible = codes.flatMap((code) => {
+      const id = cardIdFromCode(code.value);
+      return id ? [{ ...code, accountId: id }] : [];
+    });
+    error.textContent = "";
+    if (
+      codes.length && !visible.length && Date.now() - lastInvalidNotice > 3000
+    ) {
+      error.textContent = "That QR code is not an account card.";
+      lastInvalidNotice = Date.now();
+    }
+    const ids = [...new Set(visible.map((target) => target.accountId))];
+    if (ids.length > 1 && !selectedId) {
+      selectedId = undefined;
+      activeAccount = undefined;
+      name.textContent = "Tap a QR code";
+      balance.textContent = "\u2014";
+      query<HTMLButtonElement>("#add").disabled = true;
+      query<HTMLButtonElement>("#remove").disabled = true;
+    }
+    if (ids.length === 1 && !selectedId) selectAccount(ids[0]);
+    for (const id of ids) {
+      if (!accountCache.get(id)) void loadAccount(id);
+    }
+    refreshTargets();
+  };
   const showCameraError = (text: string) => {
     if (version !== pageVersion) return;
+    visible = [];
+    refreshTargets();
     error.textContent = text;
     start.hidden = false;
     start.disabled = false;
@@ -520,66 +607,11 @@ async function scannerPage() {
     error.textContent = "";
     status.textContent = "Opening camera…";
     try {
-      const { startScanner, cardIdFromCode } = await loadScanner();
+      const { startScanner } = await loadScanner();
       if (version !== pageVersion) return;
       const controller = await startScanner(
         video,
-        (code) => {
-          if (
-            version !== pageVersion ||
-            query<HTMLDialogElement>("#sync-dialog").open
-          ) return false;
-          const id = cardIdFromCode(code);
-          if (!id) {
-            if (Date.now() - lastInvalidNotice > 3000) {
-              error.textContent = "That QR code is not an account card.";
-              lastInvalidNotice = Date.now();
-            }
-            return false;
-          }
-          error.textContent = "";
-          if (id === selectedId || Date.now() < retryCardAfter) {
-            return false;
-          }
-          selectedId = id;
-          ++scanSelection;
-          const showAccount = () => {
-            activeAccount = accountCache.get(id);
-            if (!activeAccount) return;
-            name.textContent = activeAccount.name;
-            cooldown();
-            updateBalance();
-            status.textContent =
-              "Card ready. Show another card to switch accounts.";
-          };
-          if (accountCache.get(id)) {
-            showAccount();
-            void checkAccount(id);
-          } else {
-            activeAccount = undefined;
-            query<HTMLButtonElement>("#add").disabled = true;
-            query<HTMLButtonElement>("#remove").disabled = true;
-            name.textContent = "Loading...";
-            balance.textContent = "\u2014";
-            // Unknown cards need one lookup; a later scan must not be replaced by it.
-            const selection = ++scanSelection;
-            accountCache.refresh(id).then(() => {
-              if (version === pageVersion && selection === scanSelection) {
-                showAccount();
-              }
-            }).catch((failure) => {
-              if (version !== pageVersion || selection !== scanSelection) {
-                return;
-              }
-              name.textContent = "Scan a card";
-              selectedId = undefined;
-              retryCardAfter = Date.now() + 3000;
-              syncFailure(failure, () => checkAccount(id));
-            });
-          }
-          // Returning false leaves detection running, including after a successful scan.
-          return false;
-        },
+        onCodes,
         showCameraError,
         query<HTMLElement>(".camera-guide"),
       );
@@ -610,6 +642,7 @@ async function scannerPage() {
 }
 
 async function renderPage() {
+  renderScanTargets = undefined;
   if (route().pathname !== "/scan") void leaveScannerFullscreen();
   document.body.classList.remove("scanning");
   camera?.stop();

@@ -13,7 +13,9 @@ Edge Function** and stores accounts, sessions and retry receipts in
 - For a queue of people, choose **Scan cards**. The camera opens automatically.
   The scanner fills the screen with the camera feed, name, balance and **+ / −**
   buttons, without scrolling. QR codes inside the scan square get name labels and
-  outlines. Tap a labelled QR to select its account; the selected outline is
+  outlines. Labels and outlines remain at their last position for one second
+  after a QR is last detected, so brief misses do not make them flicker.
+  Tap a labelled QR to select its account; the selected outline is
   highlighted. A lone QR auto-selects only when no account is selected. Once
   selected, the account stays selected until you tap another QR, even if only a
   different card is visible. The details retain a compact selected-account name.

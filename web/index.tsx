@@ -8,7 +8,11 @@ import {
 } from "./types.ts";
 import { AccountCache } from "./account-cache.ts";
 import { cardIdFromCode, type ScannedCode, startScanner } from "./scanner.ts";
-import { type AccountTarget, ScanTargets } from "./scan-targets.tsx";
+import {
+  type AccountTarget,
+  RecentTargets,
+  ScanTargets,
+} from "./scan-targets.tsx";
 
 function optional<T extends HTMLElement = HTMLElement>(
   selector: string,
@@ -142,6 +146,7 @@ let activeAccount: Account | undefined;
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 let authenticated = false;
 let renderScanTargets: (() => void) | undefined;
+let clearScanTargets: (() => void) | undefined;
 
 function renderStaffNav() {
   let nav = optional<HTMLDivElement>("#staff-nav");
@@ -508,6 +513,8 @@ async function scannerPage() {
   let lastInvalidNotice = 0;
   let selectedId: string | undefined;
   let visible: AccountTarget[] = [];
+  const recentTargets = new RecentTargets();
+  let expiryTimer: ReturnType<typeof setTimeout> | undefined;
   const lookups = new Map<string, Promise<void>>();
   const retryAfter = new Map<string, number>();
   const targets = new ScanTargets(query<HTMLElement>("#qr-targets"), (id) => {
@@ -526,6 +533,24 @@ async function scannerPage() {
     }
   };
   renderScanTargets = refreshTargets;
+  const clearTargets = () => {
+    clearTimeout(expiryTimer);
+    recentTargets.clear();
+    visible = [];
+    targets.update([], selectedId, (id) => accountCache.get(id)?.name);
+  };
+  clearScanTargets = clearTargets;
+  const scheduleExpiry = () => {
+    clearTimeout(expiryTimer);
+    const next = recentTargets.nextExpiry();
+    if (next === undefined) return;
+    expiryTimer = setTimeout(() => {
+      if (version !== pageVersion) return;
+      visible = recentTargets.current(Date.now());
+      refreshTargets();
+      scheduleExpiry();
+    }, Math.max(0, next - Date.now()));
+  };
   const loadAccount = (id: string): Promise<void> => {
     const pending = lookups.get(id);
     if (pending) return pending;
@@ -565,13 +590,16 @@ async function scannerPage() {
   }
   const onCodes = (codes: ScannedCode[]) => {
     if (version !== pageVersion) return;
-    visible = codes.flatMap((code) => {
+    const detected = codes.flatMap((code) => {
       const id = cardIdFromCode(code.value);
       return id ? [{ ...code, accountId: id }] : [];
     });
+    recentTargets.observe(detected, Date.now());
+    visible = recentTargets.current(Date.now());
+    scheduleExpiry();
     error.textContent = "";
     if (
-      codes.length && !visible.length && Date.now() - lastInvalidNotice > 3000
+      codes.length && !detected.length && Date.now() - lastInvalidNotice > 3000
     ) {
       error.textContent = "That QR code is not an account card.";
       lastInvalidNotice = Date.now();
@@ -593,8 +621,7 @@ async function scannerPage() {
   };
   const showCameraError = (text: string) => {
     if (version !== pageVersion) return;
-    visible = [];
-    refreshTargets();
+    clearTargets();
     error.textContent = text;
     start.hidden = false;
     start.disabled = false;
@@ -619,7 +646,12 @@ async function scannerPage() {
         controller.stop();
         return;
       }
-      camera = controller;
+      camera = {
+        stop: () => {
+          clearTargets();
+          controller.stop();
+        },
+      };
       start.disabled = false;
       status.textContent = "Point the camera at a card’s QR code.";
     } catch (caught) {
@@ -642,6 +674,8 @@ async function scannerPage() {
 }
 
 async function renderPage() {
+  clearScanTargets?.();
+  clearScanTargets = undefined;
   renderScanTargets = undefined;
   if (route().pathname !== "/scan") void leaveScannerFullscreen();
   document.body.classList.remove("scanning");

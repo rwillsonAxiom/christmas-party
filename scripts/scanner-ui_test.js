@@ -285,8 +285,8 @@ async function setup(
         return now;
       }
     },
-    (callback) => {
-      timers.set(++nextTimer, callback);
+    (callback, delay = 0) => {
+      timers.set(++nextTimer, { callback, at: now + delay });
       return nextTimer;
     },
     (id) => timers.delete(id),
@@ -323,11 +323,18 @@ async function setup(
       assert(button, `No labelled target for ${label}`);
       button.onclick();
     },
-    advance: () => {
-      now += 500;
-      const callbacks = [...timers.values()];
-      timers.clear();
-      callbacks.forEach((callback) => callback());
+    advance: (milliseconds = 500) => {
+      const end = now + milliseconds;
+      while (true) {
+        const next = [...timers].filter(([, timer]) => timer.at <= end)
+          .sort((a, b) => a[1].at - b[1].at)[0];
+        if (!next) break;
+        const [id, timer] = next;
+        now = timer.at;
+        timers.delete(id);
+        timer.callback();
+      }
+      now = end;
     },
     setCreditResult: (value) => creditResult = value,
     setAccountResult: (value) => accountResult = value,
@@ -563,7 +570,17 @@ Deno.test("multiple QR labels are selectable and moving cards never replace a se
     ui.nodes.get("#person-name").textContent === "bob",
     "A different lone card must not steal selection",
   );
-  assert(targets.children.length === 1, "Missing QR outlines must disappear");
+  assert(
+    targets.children.length === 2,
+    "A missed frame must retain the previous QR outline",
+  );
+  ui.advance(500);
+  ui.detect("alice");
+  ui.advance(500);
+  assert(
+    targets.children.length === 1,
+    "Missing QR outlines expire after a second",
+  );
   ui.select("alice");
   assert(ui.nodes.get("#person-name").textContent === "alice");
   assert(
@@ -614,4 +631,68 @@ Deno.test("background name lookups label unselected QRs without changing the tap
   assert(unknownTarget.getAttribute("aria-pressed") === "false");
   ui.select(name);
   assert(ui.nodes.get("#credit-value").textContent === "7");
+});
+
+Deno.test("lost QR labels remain tappable for one second and expire without another frame", async () => {
+  const ui = await setup();
+  ui.detect([detected("alice"), detected("bob", .55)]);
+  const layer = ui.nodes.get("#qr-targets");
+  ui.advance(600);
+  ui.detect([detected("bob", .56)]);
+  assert(layer.children.length === 2);
+  ui.select("alice");
+  assert(
+    ui.nodes.get("#person-name").textContent === "alice",
+    "A briefly lost card must still be selectable",
+  );
+  ui.advance(399);
+  assert(layer.children.length === 2, "Keep the label through 999 ms");
+  ui.advance(1);
+  assert(
+    layer.children.length === 1 && layer.children[0].title === "bob",
+    "Each QR expires from its own last sighting",
+  );
+  ui.advance(600);
+  assert(
+    layer.children.length === 0,
+    "No new camera frame is needed to expire labels",
+  );
+  assert(
+    ui.nodes.get("#person-name").textContent === "alice",
+    "Expiry must not change the selected account",
+  );
+  assert(ui.requests.every(({ options }) => options.method === "GET"));
+});
+
+Deno.test("re-detection renews the hold, while cache updates and navigation do not prolong it", async () => {
+  const ui = await setup();
+  ui.detect("alice");
+  const layer = ui.nodes.get("#qr-targets");
+  const original = layer.children[0];
+  ui.advance(700);
+  ui.detect([]);
+  ui.advance(200);
+  ui.detect([detected("alice", .3)]);
+  assert(
+    layer.children[0] === original,
+    "Re-detection must keep the existing tap target",
+  );
+  ui.advance(999);
+  assert(layer.children.length === 1, "Re-detection restarts the second");
+  ui.nodes.get("#add").onclick();
+  await settle();
+  ui.advance(1);
+  assert(
+    layer.children.length === 0,
+    "A balance/cache update must not count as a sighting",
+  );
+  ui.detect("alice");
+  assert(layer.children.length === 1);
+  await ui.leave();
+  assert(
+    layer.children.length === 0,
+    "Navigation clears the held labels immediately",
+  );
+  ui.advance(2000);
+  assert(layer.children.length === 0);
 });

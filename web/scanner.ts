@@ -1,4 +1,4 @@
-// Pinned and reviewed; see dependency-review.txt and public/qr-LICENSE.txt.
+// Pinned and reviewed; see dependency-review.txt and web/qr-LICENSE.txt.
 import decodeQR from "jsr:@paulmillr/qr@0.7.2/decode.js";
 
 export function cardIdFromCode(value: string): string | undefined {
@@ -30,7 +30,7 @@ export function decodeFrame(
 }
 
 interface Detector {
-  detect(video: HTMLVideoElement): Promise<{ rawValue: string }[]>;
+  detect(image: HTMLCanvasElement): Promise<{ rawValue: string }[]>;
 }
 interface DetectorConstructor {
   new (options: { formats: string[] }): Detector;
@@ -97,24 +97,35 @@ export async function startScanner(
     try {
       if (
         !paused && !document.hidden && video.readyState >= 2 &&
+        video.videoWidth > 0 && video.videoHeight > 0 &&
         time - lastFrame >= 160
       ) {
         lastFrame = time;
+        // Match object-fit: cover + object-position: center in the square preview.
+        // Both decoders receive only visible pixels, never the full camera frame.
+        const side = Math.min(video.videoWidth, video.videoHeight);
+        canvas.width = canvas.height = Math.min(side, 800);
+        context.drawImage(
+          video,
+          (video.videoWidth - side) / 2,
+          (video.videoHeight - side) / 2,
+          side,
+          side,
+          0,
+          0,
+          canvas.width,
+          canvas.height,
+        );
         let code: string | undefined;
         if (detector) {
           try {
-            code = (await detector.detect(video))[0]?.rawValue;
+            code = (await detector.detect(canvas))[0]?.rawValue;
           } catch {
             detector = undefined;
           }
-        } else if (video.videoWidth && video.videoHeight) {
-          const scale = Math.min(
-            1,
-            800 / Math.max(video.videoWidth, video.videoHeight),
-          );
-          canvas.width = Math.round(video.videoWidth * scale);
-          canvas.height = Math.round(video.videoHeight * scale);
-          context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        }
+        if (stopped) return;
+        if (!detector) {
           code = decodeFrame(
             context.getImageData(0, 0, canvas.width, canvas.height).data,
             canvas.width,

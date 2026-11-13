@@ -4,6 +4,53 @@ export interface AccountTarget extends ScannedCode {
   accountId: string;
 }
 
+function sortTargets(targets: AccountTarget[]) {
+  return [...targets].sort((a, b) =>
+    a.value.localeCompare(b.value) || a.corners[0].x - b.corners[0].x ||
+    a.corners[0].y - b.corners[0].y
+  );
+}
+
+export class RecentTargets {
+  private readonly tracked = new Map<
+    string,
+    { target: AccountTarget; lastSeen: number }
+  >();
+  constructor(private readonly holdMs = 1000) {}
+
+  observe(targets: AccountTarget[], now: number) {
+    const occurrences = new Map<string, number>();
+    for (const target of sortTargets(targets)) {
+      const occurrence = occurrences.get(target.value) || 0;
+      occurrences.set(target.value, occurrence + 1);
+      this.tracked.set(`${target.value}:${occurrence}`, {
+        target,
+        lastSeen: now,
+      });
+    }
+  }
+
+  current(now: number): AccountTarget[] {
+    for (const [key, entry] of this.tracked) {
+      if (now - entry.lastSeen >= this.holdMs) this.tracked.delete(key);
+    }
+    return [...this.tracked.values()].map((entry) => entry.target);
+  }
+
+  nextExpiry(): number | undefined {
+    if (!this.tracked.size) return;
+    return Math.min(
+      ...[...this.tracked.values()].map((entry) =>
+        entry.lastSeen + this.holdMs
+      ),
+    );
+  }
+
+  clear() {
+    this.tracked.clear();
+  }
+}
+
 // Reuse each button as its QR moves: replacing it every frame interrupts taps
 // and keyboard focus. The four edges follow the decoder's actual quadrilateral.
 export class ScanTargets {
@@ -23,10 +70,7 @@ export class ScanTargets {
   ) {
     const seen = new Set<string>();
     const occurrences = new Map<string, number>();
-    const sorted = [...targets].sort((a, b) =>
-      a.value.localeCompare(b.value) || a.corners[0].x - b.corners[0].x ||
-      a.corners[0].y - b.corners[0].y
-    );
+    const sorted = sortTargets(targets);
     for (const target of sorted) {
       const occurrence = occurrences.get(target.value) || 0;
       occurrences.set(target.value, occurrence + 1);

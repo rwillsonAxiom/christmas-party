@@ -16,7 +16,14 @@ async function settle() {
   for (let i = 0; i < 20; i++) await Promise.resolve();
 }
 
-async function setup({ cameraFailure = false, cached = true } = {}) {
+async function setup(
+  {
+    cameraFailure = false,
+    cached = true,
+    fullscreen = false,
+    fullscreenFailure = false,
+  } = {},
+) {
   const nodes = new Map();
   function node() {
     const classes = new Set();
@@ -68,6 +75,18 @@ async function setup({ cameraFailure = false, cached = true } = {}) {
     querySelector: (selector) => nodes.get(selector),
     createElement: node,
     addEventListener() {},
+    fullscreenEnabled: fullscreen,
+    fullscreenElement: null,
+    documentElement: {
+      async requestFullscreen(options) {
+        assert(options.navigationUI === "hide");
+        if (fullscreenFailure) throw new Error("Fullscreen denied");
+        document.fullscreenElement = this;
+      },
+    },
+    async exitFullscreen() {
+      this.fullscreenElement = null;
+    },
   };
   const events = new Map();
   const window = {
@@ -301,4 +320,29 @@ Deno.test("camera failures expose a retry control", async () => {
   assert(!ui.nodes.get("#camera-start").hidden);
   assert(!ui.nodes.get("#camera-start").disabled);
   assert(ui.nodes.get("#camera-error").textContent === "Camera unavailable");
+});
+
+Deno.test("scanner can enter real fullscreen and leaves it on navigation", async () => {
+  const ui = await setup({ fullscreen: true });
+  const button = ui.nodes.get("#scanner-fullscreen");
+  assert(!button.hidden, "Direct scan links need a fullscreen tap");
+  await button.onclick();
+  assert(
+    ui.document.fullscreenElement === ui.document.documentElement,
+    "Fullscreen includes the controls and dialogs",
+  );
+  assert(button.hidden);
+  await ui.leave();
+  assert(!ui.document.fullscreenElement);
+});
+
+Deno.test("unsupported or declined fullscreen preserves the working scanner", async () => {
+  const unsupported = await setup();
+  assert(unsupported.nodes.get("#scanner-fullscreen").hidden);
+  const declined = await setup({ fullscreen: true, fullscreenFailure: true });
+  await declined.nodes.get("#scanner-fullscreen").onclick();
+  assert(!declined.nodes.get("#scanner-fullscreen").hidden);
+  assert(!declined.nodes.get("#sync-dialog").open);
+  declined.detect("alice");
+  assert(declined.nodes.get("#person-name").textContent === "alice");
 });

@@ -31,6 +31,13 @@ Edge Function** and stores accounts, sessions and retry receipts in
   reconcile confirmed balances without overwriting pending local updates. All
   accounts refresh when entering the scanner and when returning to its tab.
   Supabase Realtime is not enabled yet.
+- The scanner uses a square camera preview capped by the shorter viewport side,
+  with a larger name and wide credit buttons. Tapping **Scan cards** requests
+  browser fullscreen where supported. A small fullscreen control handles direct
+  links and returning from fullscreen; the close control returns to accounts.
+  Browsers can decline fullscreen, and iPhone browser support is limited. Add
+  the site to the Home Screen and launch it there to use the configured standalone
+  mode without an address bar. This does not add offline app loading.
 - Camera permission is requested when entering Scan cards. Leaving the scan
   screen (using browser Back) releases the camera. No images are uploaded.
   Camera scanning needs HTTPS or localhost; plain HTTP on a phone's LAN address

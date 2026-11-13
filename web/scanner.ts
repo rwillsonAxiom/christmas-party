@@ -9,6 +9,22 @@ export interface ScannedCode {
   value: string;
   // Decoder coordinates are pixels; startScanner reports preview-relative 0..1 coordinates.
   corners: Point[];
+  coverage: number;
+}
+
+// Use the actual quadrilateral, not its bounding box (which overstates tilted QRs).
+export function qrCoverage(
+  corners: Point[],
+  width: number,
+  height: number,
+): number {
+  if (corners?.length !== 4 || width <= 0 || height <= 0) return 0;
+  let twiceArea = 0;
+  for (let i = 0; i < corners.length; i++) {
+    const a = corners[i], b = corners[(i + 1) % corners.length];
+    twiceArea += a.x * b.y - b.x * a.y;
+  }
+  return Math.abs(twiceArea) / (2 * width * height);
 }
 
 export async function decodeFrameAll(
@@ -24,9 +40,11 @@ export async function decodeFrameAll(
       maxSize: { width, height },
       pointsOnDetect: (points, result) => {
         if (typeof result === "string") {
+          const corners = points.bounds.map(({ x, y }) => ({ x, y }));
           codes.push({
             value: result,
-            corners: points.bounds.map(({ x, y }) => ({ x, y })),
+            corners,
+            coverage: qrCoverage(corners, width, height),
           });
         }
       },
@@ -208,7 +226,11 @@ export async function startScanner(
           try {
             codes = (await detector.detect(canvas)).map((
               { rawValue, cornerPoints },
-            ) => ({ value: rawValue, corners: cornerPoints }));
+            ) => ({
+              value: rawValue,
+              corners: cornerPoints,
+              coverage: qrCoverage(cornerPoints, canvas.width, canvas.height),
+            }));
           } catch {
             detector = undefined;
           }
@@ -231,8 +253,9 @@ export async function startScanner(
           )
         );
         onCodes(
-          contained.map(({ value, corners }) => ({
+          contained.map(({ value, corners, coverage }) => ({
             value,
+            coverage,
             corners: corners.map(({ x, y }) => ({
               x: (sourceLeft + (sx + x * width / canvas.width) * scale -
                 preview.left) / preview.width,

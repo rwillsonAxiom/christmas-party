@@ -16,14 +16,17 @@ Edge Function** and stores accounts, sessions and retry receipts in
   outlines. Labels and outlines remain at their last position for one second
   after a QR is last detected, so brief misses do not make them flicker.
   Tap a labelled QR to select its account; the selected outline is
-  highlighted. A lone QR auto-selects only when no account is selected. Once
-  selected, the account stays selected until you tap another QR, even if only a
-  different card is visible. The details retain a compact selected-account name.
+  highlighted. A lone QR auto-selects when no account is selected. A freshly
+  detected QR covering more than 50% of the inner scan square also auto-selects,
+  even when another account is selected. Coverage uses the QR's actual outlined
+  area, including its rotation. Smaller cards leave the selection unchanged until
+  you tap one. The details retain a compact selected-account name.
 - The browser preloads all accounts and keeps a local cache scoped to the API
   address. Known cards render instantly from their account ID while the client
   checks the server in the background. New, uncached cards need one lookup.
 - Scanning never changes credits automatically. The **+ / −** buttons have a
-  400 ms cooldown after selecting an account or tapping a credit button. Tapping updates the local balance
+  400 ms cooldown only after automatic selection. Manual QR selections enable
+  the controls immediately; credit taps do not start a cooldown. Tapping updates the local balance
   immediately and queues an authenticated server update. You can scan another
   card or make another change without waiting for that update.
 - Updates are sent in order with idempotent receipt IDs. Each tab keeps its own

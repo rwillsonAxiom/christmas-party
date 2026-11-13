@@ -245,6 +245,11 @@ export function scanner() {
           aria-label="Live card scanner"
         />
         <div className="camera-guide" aria-hidden="true" />
+        <div
+          id="qr-targets"
+          className="qr-targets"
+          aria-label="Detected account cards"
+        />
         <a
           href="#/"
           className="fullscreen-button scanner-exit"

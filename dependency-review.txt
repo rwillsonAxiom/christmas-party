@@ -28,7 +28,11 @@ Integration decisions:
 - Import only encoder/decoder into production, not the optional DOM helpers.
 - Request video only after a button click, limit frames to 800x800 and scan
   frequency, and stop media tracks on exit. Frames stay in the browser.
-- Decode with effort=1 and timeLimit=8; pause after accepting a card.
+- Decode only pixels inside the inner scan overlay, capped at 800x800.
+- Decode with effort=1 and timeLimit=8. Use native multi-code detection or
+  decodeQRBatch with its capacity bounded to the cropped frame. Use successful
+  results' corner coordinates to draw selectable name labels; reject projected
+  corners outside the scanned region. Keep scanning after selection.
 - Treat decoded text as untrusted: extract an account UUID from a recognised
   URL shape, never navigate to the scanned URL or insert it as HTML.
 - Require server-side staff sessions for every credit change.

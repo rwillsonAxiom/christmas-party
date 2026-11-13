@@ -12,12 +12,16 @@ Edge Function** and stores accounts, sessions and retry receipts in
 - Staff choose **Staff sign in** and enter the shared password once per device.
 - For a queue of people, choose **Scan cards**. The camera opens automatically.
   The scanner fills the screen with the camera feed, name, balance and **+ / −**
-  buttons, without scrolling. Show another card to switch accounts automatically.
+  buttons, without scrolling. QR codes inside the scan square get name labels and
+  outlines. Tap a labelled QR to select its account; the selected outline is
+  highlighted. A lone QR auto-selects only when no account is selected. Once
+  selected, the account stays selected until you tap another QR, even if only a
+  different card is visible. The details retain a compact selected-account name.
 - The browser preloads all accounts and keeps a local cache scoped to the API
   address. Known cards render instantly from their account ID while the client
   checks the server in the background. New, uncached cards need one lookup.
 - Scanning never changes credits automatically. The **+ / −** buttons have a
-  400 ms cooldown after each scan or tap. Tapping updates the local balance
+  400 ms cooldown after selecting an account or tapping a credit button. Tapping updates the local balance
   immediately and queues an authenticated server update. You can scan another
   card or make another change without waiting for that update.
 - Updates are sent in order with idempotent receipt IDs. Each tab keeps its own

@@ -1,5 +1,39 @@
 // Pinned and reviewed; see dependency-review.txt and web/qr-LICENSE.txt.
-import decodeQR from "jsr:@paulmillr/qr@0.7.2/decode.js";
+import decodeQR, { decodeQRBatch } from "jsr:@paulmillr/qr@0.7.2/decode.js";
+
+export interface Point {
+  x: number;
+  y: number;
+}
+export interface ScannedCode {
+  value: string;
+  // Decoder coordinates are pixels; startScanner reports preview-relative 0..1 coordinates.
+  corners: Point[];
+}
+
+export async function decodeFrameAll(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+): Promise<ScannedCode[]> {
+  const codes: ScannedCode[] = [];
+  try {
+    await decodeQRBatch([{ data, width, height }], {
+      effort: 1,
+      timeLimit: 8,
+      maxSize: { width, height },
+      pointsOnDetect: (points, result) => {
+        if (typeof result === "string") {
+          codes.push({
+            value: result,
+            corners: points.bounds.map(({ x, y }) => ({ x, y })),
+          });
+        }
+      },
+    });
+  } catch { /* An unreadable frame is an empty set, not a camera failure. */ }
+  return codes;
+}
 
 export function cardIdFromCode(value: string): string | undefined {
   try {
@@ -30,7 +64,9 @@ export function decodeFrame(
 }
 
 interface Detector {
-  detect(image: HTMLCanvasElement): Promise<{ rawValue: string }[]>;
+  detect(
+    image: HTMLCanvasElement,
+  ): Promise<{ rawValue: string; cornerPoints: Point[] }[]>;
 }
 interface DetectorConstructor {
   new (options: { formats: string[] }): Detector;
@@ -39,10 +75,10 @@ interface DetectorConstructor {
 
 export async function startScanner(
   video: HTMLVideoElement,
-  onCode: (code: string) => boolean,
+  onCodes: (codes: ScannedCode[]) => void,
   onError: (message: string) => void,
   guide: HTMLElement,
-): Promise<{ stop(): void; resume(): void }> {
+): Promise<{ stop(): void }> {
   if (!globalThis.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
     throw new Error(
       "Camera scanning needs HTTPS. Use the deployed website, or localhost when testing on this computer.",
@@ -70,7 +106,6 @@ export async function startScanner(
     },
   });
   let stopped = false;
-  let paused = false;
   let frame = 0;
   let lastFrame = 0;
   const stop = () => {
@@ -79,6 +114,7 @@ export async function startScanner(
     stream.getTracks().forEach((track) => track.stop());
     video.srcObject = null;
     canvas.width = canvas.height = 0;
+    onCodes([]);
   };
   video.srcObject = stream;
   try {
@@ -97,7 +133,7 @@ export async function startScanner(
     if (stopped) return;
     try {
       if (
-        !paused && !document.hidden && video.readyState >= 2 &&
+        !document.hidden && video.readyState >= 2 &&
         video.videoWidth > 0 && video.videoHeight > 0 &&
         time - lastFrame >= 160
       ) {
@@ -126,6 +162,7 @@ export async function startScanner(
         if (
           !preview.width || !preview.height || right <= left || bottom <= top
         ) {
+          onCodes([]);
           frame = requestAnimationFrame(tick);
           return;
         }
@@ -148,6 +185,7 @@ export async function startScanner(
           Math.floor((bottom - sourceTop) / scale),
         ) - sy;
         if (width <= 0 || height <= 0) {
+          onCodes([]);
           frame = requestAnimationFrame(tick);
           return;
         }
@@ -165,24 +203,44 @@ export async function startScanner(
           canvas.width,
           canvas.height,
         );
-        let code: string | undefined;
+        let codes: ScannedCode[] = [];
         if (detector) {
           try {
-            code = (await detector.detect(canvas))[0]?.rawValue;
+            codes = (await detector.detect(canvas)).map((
+              { rawValue, cornerPoints },
+            ) => ({ value: rawValue, corners: cornerPoints }));
           } catch {
             detector = undefined;
           }
         }
         if (stopped) return;
         if (!detector) {
-          code = decodeFrame(
+          codes = await decodeFrameAll(
             context.getImageData(0, 0, canvas.width, canvas.height).data,
             canvas.width,
             canvas.height,
           );
         }
         if (stopped) return;
-        if (code && onCode(code)) paused = true;
+        // Ignore estimates extending outside the scan area; outline only pixels we read.
+        const contained = codes.filter(({ corners }) =>
+          corners?.length === 4 &&
+          corners.every(({ x, y }) =>
+            Number.isFinite(x) && Number.isFinite(y) && x >= 0 && y >= 0 &&
+            x <= canvas.width && y <= canvas.height
+          )
+        );
+        onCodes(
+          contained.map(({ value, corners }) => ({
+            value,
+            corners: corners.map(({ x, y }) => ({
+              x: (sourceLeft + (sx + x * width / canvas.width) * scale -
+                preview.left) / preview.width,
+              y: (sourceTop + (sy + y * height / canvas.height) * scale -
+                preview.top) / preview.height,
+            })),
+          })),
+        );
       }
     } catch {
       stop();
@@ -194,10 +252,5 @@ export async function startScanner(
     if (!stopped) frame = requestAnimationFrame(tick);
   };
   frame = requestAnimationFrame(tick);
-  return {
-    stop,
-    resume: () => {
-      paused = false;
-    },
-  };
+  return { stop };
 }

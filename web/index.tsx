@@ -622,7 +622,7 @@ async function scannerPage() {
       query<HTMLButtonElement>("#remove").disabled = true;
     }
     // Only fresh detections can trigger a size-based switch; held outlines cannot.
-    const dominant = detected.filter((target) => target.coverage > .33)
+    const dominant = detected.filter((target) => target.coverage > .25)
       .sort((a, b) => b.coverage - a.coverage)[0];
     if (dominant) selectAccount(dominant.accountId, true);
     else if (ids.length === 1 && !selectedId) selectAccount(ids[0], true);

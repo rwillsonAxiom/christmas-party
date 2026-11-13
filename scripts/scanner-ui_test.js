@@ -365,7 +365,10 @@ Deno.test("scanner starts automatically and switches accounts only when tapped a
     "A new lone QR must not replace the selected account",
   );
   ui.select("bob");
-  assert(ui.nodes.get("#add").disabled, "Disable credits while switching");
+  assert(
+    !ui.nodes.get("#add").disabled,
+    "Manual selection enables credit controls immediately",
+  );
   await settle();
   assert(ui.nodes.get("#person-name").textContent === "bob");
   assert(ui.nodes.get("#credit-value").textContent === "0");
@@ -398,10 +401,9 @@ Deno.test("cached scans and credit changes are instant while the server is delay
     ui.nodes.get("#credit-value").textContent === "3",
     "Update before the server responds",
   );
-  ui.nodes.get("#add").onclick();
   assert(
-    ui.requests.filter(({ options }) => options.method === "POST").length === 1,
-    "Cooldown prevents duplicate taps",
+    !ui.nodes.get("#add").disabled,
+    "Credit taps do not start a selection cooldown",
   );
   finishRead({
     ok: true,
@@ -584,8 +586,8 @@ Deno.test("multiple QR labels are selectable and moving cards never replace a se
   ui.select("alice");
   assert(ui.nodes.get("#person-name").textContent === "alice");
   assert(
-    ui.nodes.get("#add").disabled,
-    "Tapping a new account starts the cooldown",
+    !ui.nodes.get("#add").disabled,
+    "Manual selection has no cooldown",
   );
   ui.advance();
   ui.nodes.get("#add").onclick();
@@ -695,4 +697,61 @@ Deno.test("re-detection renews the hold, while cache updates and navigation do n
   );
   ui.advance(2000);
   assert(layer.children.length === 0);
+});
+
+Deno.test("a QR over half the scan area automatically switches accounts with a single cooldown", async () => {
+  const ui = await setup();
+  ui.detect("alice");
+  ui.advance(400);
+  ui.detect([{ ...detected("bob"), coverage: .5 }]);
+  assert(
+    ui.nodes.get("#person-name").textContent === "alice",
+    "Exactly 50% must not switch accounts",
+  );
+  ui.detect([{ ...detected("bob"), coverage: .5001 }]);
+  assert(ui.nodes.get("#person-name").textContent === "bob");
+  assert(
+    ui.nodes.get("#add").disabled,
+    "A size-based automatic selection starts the cooldown",
+  );
+  ui.advance(250);
+  ui.detect([{ ...detected("bob"), coverage: .7 }]);
+  ui.advance(149);
+  assert(ui.nodes.get("#add").disabled);
+  ui.advance(1);
+  assert(
+    !ui.nodes.get("#add").disabled,
+    "Repeated detection of the selected QR must not restart the cooldown",
+  );
+  ui.select("alice");
+  assert(!ui.nodes.get("#add").disabled, "Manual switching is immediate");
+  ui.detect([{ ...detected("alice"), coverage: .1 }]);
+  assert(
+    ui.nodes.get("#person-name").textContent === "alice",
+    "A retained large outline must not trigger an automatic switch",
+  );
+  assert(ui.requests.every(({ options }) => options.method === "GET"));
+});
+
+Deno.test("manual confirmation cancels an automatic cooldown and credit taps do not impose delays", async () => {
+  const ui = await setup();
+  ui.detect("alice");
+  assert(ui.nodes.get("#add").disabled);
+  ui.select("alice");
+  assert(
+    !ui.nodes.get("#add").disabled,
+    "Tapping the automatically selected QR confirms it immediately",
+  );
+  ui.nodes.get("#add").onclick();
+  assert(!ui.nodes.get("#add").disabled);
+  ui.nodes.get("#add").onclick();
+  assert(ui.nodes.get("#credit-value").textContent === "4");
+  await settle();
+  const writes = ui.requests.filter(({ options }) => options.method === "POST");
+  assert(writes.length === 2);
+  assert(
+    JSON.parse(writes[0].options.body).requestId !==
+      JSON.parse(writes[1].options.body).requestId,
+    "Separate intentional taps must queue distinct operations",
+  );
 });

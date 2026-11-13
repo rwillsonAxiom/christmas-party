@@ -4,6 +4,7 @@ import {
   cardIdFromCode,
   decodeFrame,
   decodeFrameAll,
+  qrCoverage,
   startScanner,
 } from "./web/scanner.ts";
 
@@ -13,6 +14,33 @@ function assert(
 ): asserts condition {
   if (!condition) throw new Error(message);
 }
+
+Deno.test("QR coverage uses polygon area rather than the bounding box", () => {
+  const diamond = [{ x: 100, y: 0 }, { x: 200, y: 100 }, { x: 100, y: 200 }, {
+    x: 0,
+    y: 100,
+  }];
+  assert(
+    qrCoverage(diamond, 200, 200) === .5,
+    "A tilted QR with a full-frame bounding box covers only half the frame",
+  );
+  assert(qrCoverage([...diamond].reverse(), 200, 200) === .5);
+  assert(
+    qrCoverage(
+      diamond.map(({ x, y }) => ({ x: x * 2, y: y * 2 })),
+      400,
+      400,
+    ) === .5,
+    "Downsampling must not change the coverage fraction",
+  );
+  assert(
+    qrCoverage(
+      [{ x: 0, y: 0 }, { x: 160, y: 0 }, { x: 160, y: 160 }, { x: 0, y: 160 }],
+      200,
+      200,
+    ) === .64,
+  );
+});
 
 Deno.test("generated card QR decodes into the original account URL", () => {
   const id = "12f04857-96da-44c0-9b01-cab5baaa1122";
@@ -278,6 +306,12 @@ Deno.test("both scanner decoders read only inside the overlay, excluding the res
           video as unknown as HTMLVideoElement,
           (codes) => {
             latest = codes.map((code) => code.value);
+            for (const code of codes) {
+              assert(
+                code.coverage > 0 && code.coverage <= 1,
+                "Both decoder paths must report scan-square coverage",
+              );
+            }
             found.push(...codes.map((code) => code.value));
             for (const code of codes) {
               for (const point of code.corners) {

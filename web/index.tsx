@@ -99,6 +99,10 @@ function cooldown() {
     }
   }, buttonCooldown);
 }
+function clearCooldown() {
+  clearTimeout(cooldownTimer);
+  readyAt = 0;
+}
 function renderCachedAccounts() {
   accounts = accountCache.list();
   if (activeAccount) {
@@ -473,7 +477,6 @@ function changeCredit(delta: 1 | -1) {
     !activeAccount || !authenticated || accountCache.failed ||
     Date.now() < readyAt
   ) return;
-  cooldown();
   try {
     accountCache.enqueue(activeAccount.id, delta, requestId());
   } catch (caught) {
@@ -566,13 +569,18 @@ async function scannerPage() {
     lookups.set(id, task);
     return task;
   };
-  function selectAccount(id: string) {
+  function selectAccount(id: string, automatic = false) {
     if (
       version !== pageVersion ||
-      query<HTMLDialogElement>("#sync-dialog").open || id === selectedId
+      query<HTMLDialogElement>("#sync-dialog").open
     ) return;
+    if (!automatic) clearCooldown();
+    if (id === selectedId) {
+      if (!automatic && activeAccount) updateBalance();
+      return;
+    }
     selectedId = id;
-    cooldown();
+    if (automatic) cooldown();
     activeAccount = accountCache.get(id);
     if (activeAccount) {
       name.textContent = activeAccount.name;
@@ -613,7 +621,11 @@ async function scannerPage() {
       query<HTMLButtonElement>("#add").disabled = true;
       query<HTMLButtonElement>("#remove").disabled = true;
     }
-    if (ids.length === 1 && !selectedId) selectAccount(ids[0]);
+    // Only fresh detections can trigger a size-based switch; held outlines cannot.
+    const dominant = detected.filter((target) => target.coverage > .5)
+      .sort((a, b) => b.coverage - a.coverage)[0];
+    if (dominant) selectAccount(dominant.accountId, true);
+    else if (ids.length === 1 && !selectedId) selectAccount(ids[0], true);
     for (const id of ids) {
       if (!accountCache.get(id)) void loadAccount(id);
     }

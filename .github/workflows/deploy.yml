@@ -27,31 +27,36 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.9.6
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v3
         with:
-          version: latest
+          version: ^3
       - name: Check required deployment settings
         shell: bash
         run: |
           test -n "$SUPABASE_ACCESS_TOKEN" || { echo 'Set SUPABASE_ACCESS_TOKEN in GitHub secrets'; exit 1; }
           test -n "$SUPABASE_DB_PASSWORD" || { echo 'Set SUPABASE_DB_PASSWORD in GitHub secrets'; exit 1; }
           test -n "$SUPABASE_PROJECT_REF" || { echo 'Set SUPABASE_PROJECT_REF in GitHub variables'; exit 1; }
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
         id: pages
+      - name: Discover IPv4 session pooler
+        id: database
+        run: deno run --allow-net=api.supabase.com --allow-env=SUPABASE_ACCESS_TOKEN,SUPABASE_PROJECT_REF,GITHUB_OUTPUT --allow-write="$GITHUB_OUTPUT" scripts/deploy-database.ts
       - name: Deploy database migrations
+        env:
+          DATABASE_URL: ${{ steps.database.outputs.url }}
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
-          supabase link --project-ref "$SUPABASE_PROJECT_REF"
-          supabase db push --remote --yes
+          supabase db push --remote="$DATABASE_URL" --yes
       - name: Configure frontend URL and deploy API
         env:
           PUBLIC_URL: ${{ steps.pages.outputs.base_url }}
         run: |
-          supabase secrets set "PUBLIC_URL=$PUBLIC_URL" --project-ref "$SUPABASE_PROJECT_REF"
-          supabase functions deploy credit-cards --project-ref "$SUPABASE_PROJECT_REF"
+          supabase secrets set "PUBLIC_URL=$PUBLIC_URL" --remote="$SUPABASE_PROJECT_REF" --yes
+          supabase functions deploy credit-cards --remote="$SUPABASE_PROJECT_REF" --yes
       - name: Verify API and database are reachable
         run: |
           curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 2 --output /dev/null "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/credit-cards/api/accounts"
@@ -59,8 +64,8 @@ jobs:
         run: |
           export API_BASE_URL="https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/credit-cards"
           deno task build
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
-      - uses: actions/deploy-pages@v4
+      - uses: actions/deploy-pages@v5
         id: pages-deploy

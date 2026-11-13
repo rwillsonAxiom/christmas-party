@@ -3,7 +3,7 @@
 Named credit accounts, printable QR cards, a public viewer, and a staff camera
 scanner. The frontend deploys to **GitHub Pages**; our API runs in a **Supabase
 Edge Function** and stores accounts, sessions and retry receipts in
-**PostgreSQL**. There is no Supabase SDK or database credential in the browser. 
+**PostgreSQL**. There is no Supabase SDK or database credential in the browser.
 
 ## Everyday use
 
@@ -56,6 +56,31 @@ been created or pushed by this setup.
 
 5. In GitHub **Settings → Pages**, choose **GitHub Actions** as the publishing
    source. Push to `main`, or run **Deploy Pages and Supabase** on `main`.
+
+Scope the Supabase personal access token to this project with these permissions:
+
+| Permission            | Access     |
+| --------------------- | ---------- |
+| Project Settings      | Read       |
+| API Keys              | Read       |
+| API Key Secrets       | Read       |
+| Connection Pooling    | Read       |
+| Edge Functions        | Read-write |
+| Edge Function Secrets | Read-write |
+
+Connection Pooling Read lets the workflow discover the free shared IPv4 pooler
+for GitHub Actions, whose runner may not support the database's direct IPv6
+address. The workflow selects the primary session pooler on port 5432 and passes
+its URL directly to `supabase db push`; it does not run `supabase link`. The
+password is supplied through `PGPASSWORD` from the existing
+`SUPABASE_DB_PASSWORD` secret, never included in the URL or step outputs. No
+additional URL secret, dedicated IPv4 address or paid add-on is needed. A
+discovery failure identifies missing token permissions or an unavailable project
+before attempting migrations.
+
+After changing workflows, push the changes to `main` and use the new run.
+Re-running an older failed run uses that run's workflow revision. The workflows
+use the Node.js 24 action versions and Supabase CLI major version 3.
 
 The workflow runs type checks, real PostgreSQL integration tests, scanner tests
 and a static build. After they pass, it applies migrations, sets `PUBLIC_URL`

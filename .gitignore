@@ -3,6 +3,5 @@ data/
 .env.*
 !.env.example
 dist/
-public/app.js
 supabase/.temp/
 supabase/.branches/

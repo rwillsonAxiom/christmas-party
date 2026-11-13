@@ -6,12 +6,12 @@
     "dev:stop": "deno run --env-file=.env --allow-read --allow-run --allow-env scripts/dev-db.ts stop",
     "test:local": "deno run --env-file=.env --allow-net --allow-read --allow-write=./data --allow-run --allow-env scripts/test-local.ts",
     "start": "deno task client:build && deno run --env-file=.env --allow-net --allow-read=. --allow-env server.ts",
-    "check": "deno task client:build && deno check web/index.tsx web/account-cache.ts dev.ts server.ts supabase/functions/credit-cards/index.ts server_test.ts database_test.ts scanner.ts scanner_test.ts scripts/*.ts",
+    "check": "deno task client:build && deno check web/index.tsx web/account-cache.ts dev.ts server.ts supabase/functions/credit-cards/index.ts server_test.ts database_test.ts web/scanner.ts scanner_test.ts scripts/*.ts",
     "test": "deno task client:build && deno test --allow-net --allow-env --allow-read=. server_test.ts database_test.ts scanner_test.ts scripts/scanner-ui_test.js scripts/account-cache_test.js scripts/deploy-database_test.ts",
     "diagnose": "deno run --env-file=.env --allow-net --allow-env scripts/diagnose.ts",
-    "build": "deno task client:build && deno run --allow-read=public --allow-write=dist --allow-env=API_BASE_URL scripts/build.ts",
+    "build": "deno task client:build && deno run --allow-read=dist --allow-write=dist --allow-env=API_BASE_URL scripts/build.ts",
     "import:kv": "deno run --env-file=.env --unstable-kv --allow-net --allow-env --allow-read=./data --allow-write=./data scripts/import-kv.ts",
-    "client:build": "deno bundle --platform browser --output public/app.js web/index.tsx"
+    "client:build": "deno run --allow-read=dist --allow-write=dist scripts/clean-dist.ts && deno bundle --platform browser --outdir dist --external=*.css web/index.html && deno run --allow-read=web --allow-write=dist scripts/copy-assets.ts"
   },
   "compilerOptions": {
     "lib": [
@@ -26,8 +26,7 @@
   "fmt": {
     "exclude": [
       "dist/",
-      "data/",
-      "public/app.js"
+      "data/"
     ]
   },
   "imports": {

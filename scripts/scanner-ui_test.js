@@ -1,7 +1,12 @@
 // Exercise the generated browser bundle, including the real JSX runtime.
 // Camera hardware and layout still need an HTTPS phone check.
+const html = await Deno.readTextFile(
+  new URL("../dist/index.html", import.meta.url),
+);
+const entry = html.match(/<script[^>]+src="([^"]+\.js)"/)?.[1];
+if (!entry) throw new Error("Bundled HTML has no browser entry script.");
 const source = (await Deno.readTextFile(
-  new URL("../public/app.js", import.meta.url),
+  new URL(`../dist/${entry}`, import.meta.url),
 )).replace("await loadScanner()", "await testScanner()");
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 

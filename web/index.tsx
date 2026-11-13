@@ -7,6 +7,7 @@ import {
   type Session,
 } from "./types.ts";
 import { AccountCache } from "./account-cache.ts";
+import { cardIdFromCode, startScanner } from "./scanner.ts";
 
 function optional<T extends HTMLElement = HTMLElement>(
   selector: string,
@@ -129,7 +130,7 @@ async function checkAllAccounts() {
 }
 let pageVersion = 0;
 let camera:
-  | Awaited<ReturnType<typeof import("../scanner.ts").startScanner>>
+  | Awaited<ReturnType<typeof import("./scanner.ts").startScanner>>
   | undefined;
 const app = query<HTMLElement>("#app");
 const message = query<HTMLElement>("#message");
@@ -479,7 +480,7 @@ async function refreshBalance() {
 }
 
 async function loadScanner() {
-  return await import("../scanner.ts");
+  return { startScanner, cardIdFromCode };
 }
 
 async function scannerPage() {

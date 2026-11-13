@@ -15,7 +15,6 @@ const api = createApi(sql, {
 });
 const assets: Record<string, [string, string]> = {
   "/": ["index.html", "text/html; charset=utf-8"],
-  "/app.js": ["app.js", "text/javascript; charset=utf-8"],
   "/manifest.webmanifest": [
     "manifest.webmanifest",
     "application/manifest+json",
@@ -23,6 +22,12 @@ const assets: Record<string, [string, string]> = {
   "/qr-LICENSE.txt": ["qr-LICENSE.txt", "text/plain; charset=utf-8"],
   "/style.css": ["style.css", "text/css; charset=utf-8"],
 };
+// HTML bundling gives the generated entry a content-hashed filename.
+for await (const entry of Deno.readDir(new URL("./dist/", import.meta.url))) {
+  if (entry.isFile && entry.name.endsWith(".js")) {
+    assets[`/${entry.name}`] = [entry.name, "text/javascript; charset=utf-8"];
+  }
+}
 console.log(`Credit Cards: http://localhost:${port}`);
 Deno.serve({ hostname, port }, async (request) => {
   const path = new URL(request.url).pathname;
@@ -34,7 +39,7 @@ Deno.serve({ hostname, port }, async (request) => {
   return new Response(
     request.method === "HEAD"
       ? null
-      : await Deno.readFile(new URL(`./public/${file}`, import.meta.url)),
+      : await Deno.readFile(new URL(`./dist/${file}`, import.meta.url)),
     {
       headers: {
         "Content-Type": type,

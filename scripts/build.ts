@@ -27,6 +27,7 @@ await Deno.writeTextFile("dist/index.html", html);
 for (
   const file of [
     "app.js",
+    "account-cache.js",
     "style.css",
     "scanner.js",
     "qr-LICENSE.txt",

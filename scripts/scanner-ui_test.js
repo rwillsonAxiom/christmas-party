@@ -1,8 +1,10 @@
+import { AccountCache } from "../public/account-cache.js";
 // Exercise the actual frontend with a small DOM and camera/API doubles.
 // Hardware detection and mobile layout still need an HTTPS phone check.
 const source = (await Deno.readTextFile(
   new URL("../public/app.js", import.meta.url),
 )).replace('import { config } from "./config.js";', "")
+  .replace('import { AccountCache } from "./account-cache.js";', "")
   .replace('await import("./scanner.js")', "await scanner()");
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
@@ -14,7 +16,7 @@ async function settle() {
   for (let i = 0; i < 20; i++) await Promise.resolve();
 }
 
-async function setup({ cameraFailure = false } = {}) {
+async function setup({ cameraFailure = false, cached = true } = {}) {
   const nodes = new Map();
   function node() {
     const classes = new Set();
@@ -27,6 +29,14 @@ async function setup({ cameraFailure = false } = {}) {
         remove: (value) => classes.delete(value),
         contains: (value) => classes.has(value),
       },
+      open: false,
+      showModal() {
+        this.open = true;
+      },
+      close() {
+        this.open = false;
+      },
+      addEventListener() {},
       append() {},
       replaceChildren() {},
       set innerHTML(html) {
@@ -45,6 +55,11 @@ async function setup({ cameraFailure = false } = {}) {
       "#message",
       "#print-cards",
       "#staff-nav",
+      "#sync-dialog",
+      "#sync-error",
+      "#sync-retry",
+      "#sync-later",
+      "#sync-sign-in",
       ".credit-actions",
     ]
   ) nodes.set(selector, node());
@@ -75,7 +90,15 @@ async function setup({ cameraFailure = false } = {}) {
     requests.push({ url, options });
     let result;
     if (url.endsWith("/session")) result = { authenticated: true };
-    else if (url.endsWith("/credits")) {
+    else if (url === "/api/accounts") {
+      result = {
+        accounts: Object.entries(balances).map(([id, balance]) => ({
+          id,
+          name: id,
+          balance,
+        })),
+      };
+    } else if (url.endsWith("/credits")) {
       const id = url.split("/").at(-2);
       if (creditResult) return await creditResult;
       balances[id] += JSON.parse(options.body).delta;
@@ -95,6 +118,23 @@ async function setup({ cameraFailure = false } = {}) {
       return { stop: () => stopped = true };
     },
   });
+  let now = 1000;
+  const timers = new Map();
+  let nextTimer = 0;
+  const store = new Map();
+  if (cached) {
+    store.set(
+      "credit-cards:accounts:https://example.test",
+      JSON.stringify([
+        { id: "alice", name: "alice", balance: 2 },
+        { id: "bob", name: "bob", balance: 0 },
+      ]),
+    );
+  }
+  const storage = {
+    getItem: (key) => store.get(key),
+    setItem: (key, value) => store.set(key, value),
+  };
   await new AsyncFunction(
     "config",
     "document",
@@ -103,6 +143,11 @@ async function setup({ cameraFailure = false } = {}) {
     "localStorage",
     "fetch",
     "scanner",
+    "AccountCache",
+    "globalThis",
+    "Date",
+    "setTimeout",
+    "clearTimeout",
     source,
   )(
     { apiBaseUrl: "" },
@@ -112,6 +157,18 @@ async function setup({ cameraFailure = false } = {}) {
     { getItem: () => "staff", setItem() {}, removeItem() {} },
     fetch,
     scanner,
+    AccountCache,
+    { localStorage: storage, sessionStorage: storage },
+    class extends Date {
+      static now() {
+        return now;
+      }
+    },
+    (callback) => {
+      timers.set(++nextTimer, callback);
+      return nextTimer;
+    },
+    (id) => timers.delete(id),
   );
   return {
     nodes,
@@ -119,6 +176,12 @@ async function setup({ cameraFailure = false } = {}) {
     document,
     location,
     detect: (code) => detect(code),
+    advance: () => {
+      now += 500;
+      const callbacks = [...timers.values()];
+      timers.clear();
+      callbacks.forEach((callback) => callback());
+    },
     setCreditResult: (value) => creditResult = value,
     setAccountResult: (value) => accountResult = value,
     leave: () => {
@@ -154,46 +217,74 @@ Deno.test("scanner starts automatically and switches cards without writing credi
   assert(ui.requests.every(({ options }) => options.method === "GET"));
 });
 
-Deno.test("scanner holds the account through writes and uncertain retries", async () => {
+Deno.test("cached scans and credit changes are instant while the server is delayed", async () => {
   const ui = await setup();
+  let finishRead;
+  ui.setAccountResult(new Promise((resolve) => finishRead = resolve));
   ui.detect("alice");
-  await settle();
+  assert(
+    ui.nodes.get("#person-name").textContent === "alice",
+    "Render before the network responds",
+  );
+  assert(ui.nodes.get("#credit-value").textContent === "2");
+  assert(ui.nodes.get("#add").disabled, "A new card has a short cooldown");
+  ui.nodes.get("#add").onclick();
+  assert(!ui.requests.some(({ options }) => options.method === "POST"));
+  ui.advance();
+  assert(!ui.nodes.get("#add").disabled);
   let rejectWrite;
   ui.setCreditResult(new Promise((_, reject) => rejectWrite = reject));
-  const write = ui.nodes.get("#add").onclick();
-  ui.detect("bob");
-  await settle();
-  assert(ui.nodes.get("#person-name").textContent === "alice");
-  rejectWrite(new Error("Connection lost"));
-  await write;
-  ui.detect("bob");
-  await settle();
-  assert(ui.nodes.get("#person-name").textContent === "alice");
-  assert(ui.nodes.get("#remove").disabled, "Only the same operation can retry");
-  assert(ui.nodes.get("#change-status").classList.contains("scan-warning"));
-  ui.setCreditResult(Promise.resolve({
+  ui.nodes.get("#add").onclick();
+  assert(
+    ui.nodes.get("#credit-value").textContent === "3",
+    "Update before the server responds",
+  );
+  ui.nodes.get("#add").onclick();
+  assert(
+    ui.requests.filter(({ options }) => options.method === "POST").length === 1,
+    "Cooldown prevents duplicate taps",
+  );
+  finishRead({
     ok: true,
-    json: () => Promise.resolve({ id: "alice", name: "alice", balance: 3 }),
-  }));
-  await ui.nodes.get("#add").onclick();
+    json: () => Promise.resolve({ id: "alice", name: "alice", balance: 2 }),
+  });
+  await settle();
+  assert(
+    ui.nodes.get("#credit-value").textContent === "3",
+    "Stale background reads cannot overwrite the edit",
+  );
+  ui.detect("bob");
+  assert(
+    ui.nodes.get("#person-name").textContent === "bob",
+    "Can move on before writes finish",
+  );
+  rejectWrite(new Error("Connection lost"));
+  await settle();
+  assert(ui.nodes.get("#sync-dialog").open, "Server failures open a popup");
+  ui.setCreditResult(
+    Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({ id: "alice", name: "alice", balance: 3 }),
+    }),
+  );
+  await ui.nodes.get("#sync-retry").onclick();
   const writes = ui.requests.filter(({ options }) => options.method === "POST");
   assert(writes.length === 2);
   assert(
     writes[0].options.body === writes[1].options.body,
-    "Reuse retry receipt",
+    "Retry the same receipt",
   );
-  assert(ui.nodes.get("#credit-value").textContent === "3");
-  assert(!ui.nodes.get("#change-status").classList.contains("scan-warning"));
-  ui.detect("bob");
-  await settle();
-  assert(ui.nodes.get("#person-name").textContent === "bob");
+  assert(
+    ui.nodes.get("#person-name").textContent === "bob",
+    "Acknowledgement cannot switch people",
+  );
 });
 
 Deno.test("leaving scanner stops camera and ignores late account loads", async () => {
-  const ui = await setup();
+  const ui = await setup({ cached: false });
   let finish;
   ui.setAccountResult(new Promise((resolve) => finish = resolve));
-  ui.detect("alice");
+  ui.detect("unknown");
   await ui.leave();
   assert(ui.stopped());
   assert(!ui.document.body.classList.contains("scanning"));

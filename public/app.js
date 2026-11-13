@@ -1,4 +1,5 @@
 import { config } from "./config.js";
+import { AccountCache } from "./account-cache.js";
 
 const apiBase = config.apiBaseUrl.replace(/\/$/, "");
 const storageKey = `credit-cards:staff:${apiBase || location.origin}`;
@@ -15,7 +16,66 @@ function saveToken(token) {
 }
 const route = () => new URL(location.hash.slice(1) || "/", location.origin);
 const apiUrl = (path) => `${apiBase}${path}`;
-const pendingChanges = new Map();
+function browserStorage(name) {
+  try {
+    return globalThis[name];
+  } catch {
+    return undefined;
+  }
+}
+const accountCache = new AccountCache({
+  api,
+  cacheStorage: browserStorage("localStorage"),
+  queueStorage: browserStorage("sessionStorage"),
+  key: `credit-cards:accounts:${apiBase || location.origin}`,
+  onChange: renderCachedAccounts,
+  onError: (error) => syncFailure(error, () => accountCache.retry()),
+});
+const buttonCooldown = 400;
+let readyAt = 0;
+let cooldownTimer;
+let syncRetry;
+function cooldown() {
+  readyAt = Date.now() + buttonCooldown;
+  clearTimeout(cooldownTimer);
+  cooldownTimer = setTimeout(() => {
+    if (activeAccount && document.querySelector("#credit-value")) {
+      updateBalance();
+    }
+  }, buttonCooldown);
+}
+function renderCachedAccounts() {
+  accounts = accountCache.list();
+  if (activeAccount) {
+    activeAccount = accountCache.get(activeAccount.id);
+    if (activeAccount && document.querySelector("#credit-value")) {
+      document.querySelector("#person-name").textContent = activeAccount.name;
+      updateBalance();
+    }
+  }
+  if (document.querySelector("#account-list")) renderList();
+}
+function syncFailure(error, retry) {
+  syncRetry = accountCache.failed ? () => accountCache.retry() : retry;
+  const dialog = document.querySelector("#sync-dialog");
+  document.querySelector("#sync-later").hidden = accountCache.failed;
+  document.querySelector("#sync-error").textContent = error.message;
+  if (!dialog.open) dialog.showModal();
+}
+async function checkAccount(id) {
+  try {
+    await accountCache.refresh(id);
+  } catch (error) {
+    syncFailure(error, () => checkAccount(id));
+  }
+}
+async function checkAllAccounts() {
+  try {
+    await accountCache.refreshAll();
+  } catch (error) {
+    syncFailure(error, checkAllAccounts);
+  }
+}
 let pageVersion = 0;
 let camera;
 const app = document.querySelector("#app");
@@ -23,8 +83,6 @@ const message = document.querySelector("#message");
 const printArea = document.querySelector("#print-cards");
 let accounts = [];
 let activeAccount;
-let busy = false;
-let pendingChange;
 let noticeTimer;
 let authenticated = false;
 
@@ -98,6 +156,7 @@ function loginPage() {
         });
         saveToken(result.token);
         authenticated = true;
+        void accountCache.retry();
         renderStaffNav();
         form.reset();
         location.replace(`#${returnTo}`);
@@ -142,6 +201,7 @@ async function api(path, body) {
     apiUrl(path),
     {
       cache: "no-store",
+      signal: AbortSignal.timeout(15000),
       credentials: "omit",
       method: body === undefined ? "GET" : "POST",
       headers: {
@@ -226,8 +286,9 @@ async function dashboard() {
           name: form.elements.name.value,
           balance: Number(form.elements.balance.value),
         });
-        accounts.push(account);
-        accounts.sort((a, b) => a.name.localeCompare(b.name));
+        accountCache.remember(account);
+        accountCache.persist();
+        accounts = accountCache.list();
         form.reset();
         document.querySelector("#search").value = "";
         renderList();
@@ -254,21 +315,9 @@ function setDashboardAccess() {
 }
 
 async function loadAccounts() {
-  if (!document.querySelector("#account-list")) return;
-  const version = pageVersion;
-  try {
-    const result = await api("/api/accounts");
-    if (version !== pageVersion) return;
-    accounts = result.accounts;
-    renderList();
-  } catch (error) {
-    if (version !== pageVersion) return;
-    const list = document.querySelector("#account-list");
-    list.replaceChildren(element("p", "inline-error", error.message));
-    const retry = element("button", "button secondary", "Try again");
-    retry.onclick = loadAccounts;
-    list.append(retry);
-  }
+  accounts = accountCache.list();
+  renderList();
+  await checkAllAccounts();
 }
 
 function renderList() {
@@ -317,27 +366,24 @@ function renderList() {
 
 async function accountPage(id) {
   const version = pageVersion;
+  const cached = accountCache.get(id);
+  if (cached) {
+    activeAccount = cached;
+    renderAccount();
+    void checkAccount(id);
+    return;
+  }
   try {
-    const account = await api(`/api/accounts/${id}`);
+    await accountCache.refresh(id);
     if (version !== pageVersion) return;
-    activeAccount = account;
-    pendingChange = pendingChanges.get(id);
+    activeAccount = accountCache.get(id);
     renderAccount();
   } catch (error) {
     if (version !== pageVersion) return;
     app.replaceChildren(
-      element(
-        "h1",
-        "error-title",
-        error.status === 404 ? "Card not found." : "Couldn’t load this card.",
-      ),
-      element("p", "lede", error.message),
+      element("h1", "error-title", "Could not load this card."),
     );
-    const retry = element("button", "button primary", "Try again");
-    retry.onclick = () => accountPage(id);
-    const home = element("a", "back-link", "Back to accounts");
-    home.href = "#/";
-    app.append(retry, home);
+    syncFailure(error, () => accountPage(id));
   }
 }
 
@@ -361,74 +407,30 @@ function updateBalance() {
   if (print) print.hidden = !authenticated;
   document.querySelector("#credit-value").textContent = activeAccount.balance
     .toLocaleString();
-  document.querySelector("#add").disabled = !authenticated || busy ||
-    Boolean(pendingChange && pendingChange.delta !== 1) ||
-    (activeAccount.balance >= 1000000 && !pendingChange);
-  document.querySelector("#remove").disabled = !authenticated || busy ||
-    Boolean(pendingChange && pendingChange.delta !== -1) ||
-    (activeAccount.balance === 0 && !pendingChange);
-  const refresh = document.querySelector("#refresh");
-  if (refresh) refresh.disabled = busy;
+  const disabled = !authenticated || accountCache.failed ||
+    Date.now() < readyAt;
+  document.querySelector("#add").disabled = disabled ||
+    activeAccount.balance >= 1000000;
+  document.querySelector("#remove").disabled = disabled ||
+    activeAccount.balance <= 0;
 }
 
-async function changeCredit(delta) {
-  if (busy || !authenticated) return;
-  busy = true;
-  pendingChange ??= { delta, requestId: requestId() };
-  const accountId = activeAccount.id;
-  const operation = pendingChange;
-  pendingChanges.set(accountId, operation);
-  updateBalance();
-  const status = document.querySelector("#change-status");
-  status.classList.remove("scan-warning");
-  status.textContent = "Saving…";
+function changeCredit(delta) {
+  if (
+    !activeAccount || !authenticated || accountCache.failed ||
+    Date.now() < readyAt
+  ) return;
+  cooldown();
   try {
-    const updated = await api(
-      `/api/accounts/${accountId}/credits`,
-      operation,
-    );
-    pendingChanges.delete(accountId);
-    if (activeAccount?.id === accountId) {
-      activeAccount = updated;
-      pendingChange = undefined;
-    }
-    status.textContent = delta === 1
-      ? "One credit added."
-      : "One credit removed.";
+    accountCache.enqueue(activeAccount.id, delta, requestId());
   } catch (error) {
-    // Keep the same request ID after network failures so a retry cannot double-charge.
-    if (error.status && error.status < 500) pendingChanges.delete(accountId);
-    if (activeAccount?.id === accountId) {
-      pendingChange = pendingChanges.get(accountId);
-    }
-    status.classList.add("scan-warning");
-    status.textContent = pendingChanges.has(accountId)
-      ? "Couldn’t confirm the change. Press the same button to retry safely."
-      : error.message;
-    if (!pendingChanges.has(accountId) && activeAccount?.id === accountId) {
-      await refreshBalance();
-    }
-  } finally {
-    busy = false;
-    if (activeAccount && document.querySelector("#credit-value")) {
-      updateBalance();
-    }
+    updateBalance();
+    syncFailure(error, () => accountCache.retry());
   }
 }
 
 async function refreshBalance() {
-  const id = activeAccount?.id;
-  if (!id) return;
-  try {
-    const updated = await api(`/api/accounts/${id}`);
-    if (activeAccount?.id !== id || !document.querySelector("#credit-value")) {
-      return;
-    }
-    activeAccount = updated;
-    updateBalance();
-  } catch (error) {
-    notice(error.message, true);
-  }
+  if (activeAccount) await checkAccount(activeAccount.id);
 }
 
 async function scannerPage() {
@@ -448,8 +450,9 @@ async function scannerPage() {
   const name = document.querySelector("#person-name");
   const balance = document.querySelector("#credit-value");
   let lastInvalidNotice = 0;
-  let acceptingCard = false;
   let retryCardAfter = 0;
+  let scanSelection = 0;
+  let selectedId;
   const showCameraError = (text) => {
     if (version !== pageVersion) return;
     error.textContent = text;
@@ -467,10 +470,9 @@ async function scannerPage() {
       const { startScanner, cardIdFromCode } = await import("./scanner.js");
       if (version !== pageVersion) return;
       const controller = await startScanner(video, (code) => {
-        // Keep detecting, but never switch the target of an in-flight or uncertain write.
-        if (version !== pageVersion || acceptingCard || busy || pendingChange) {
-          return false;
-        }
+        if (
+          version !== pageVersion || document.querySelector("#sync-dialog").open
+        ) return false;
         const id = cardIdFromCode(code);
         if (!id) {
           if (Date.now() - lastInvalidNotice > 3000) {
@@ -480,45 +482,42 @@ async function scannerPage() {
           return false;
         }
         error.textContent = "";
-        if (id === activeAccount?.id || Date.now() < retryCardAfter) {
+        if (id === selectedId || Date.now() < retryCardAfter) {
           return false;
         }
-        acceptingCard = true;
-        activeAccount = undefined;
-        pendingChange = undefined;
-        document.querySelector("#add").disabled = true;
-        document.querySelector("#remove").disabled = true;
-        const changeStatus = document.querySelector("#change-status");
-        changeStatus.textContent = "";
-        changeStatus.classList.remove("scan-warning");
-        name.textContent = "Loading…";
-        balance.textContent = "—";
-        status.textContent = "Card found. Loading account…";
-        (async () => {
-          try {
-            const account = await api(`/api/accounts/${id}`);
-            if (version !== pageVersion) return;
-            activeAccount = account;
-            pendingChange = pendingChanges.get(id);
-            name.textContent = account.name;
-            updateBalance();
-            if (pendingChange) {
-              changeStatus.classList.add("scan-warning");
-              changeStatus.textContent =
-                "Press the same button to confirm the previous change before scanning another card.";
+        selectedId = id;
+        ++scanSelection;
+        const showAccount = () => {
+          activeAccount = accountCache.get(id);
+          name.textContent = activeAccount.name;
+          cooldown();
+          updateBalance();
+          status.textContent =
+            "Card ready. Show another card to switch accounts.";
+        };
+        if (accountCache.get(id)) {
+          showAccount();
+          void checkAccount(id);
+        } else {
+          activeAccount = undefined;
+          document.querySelector("#add").disabled = true;
+          document.querySelector("#remove").disabled = true;
+          name.textContent = "Loading...";
+          balance.textContent = "\u2014";
+          // Unknown cards need one lookup; a later scan must not be replaced by it.
+          const selection = ++scanSelection;
+          accountCache.refresh(id).then(() => {
+            if (version === pageVersion && selection === scanSelection) {
+              showAccount();
             }
-            status.textContent =
-              "Card ready. Show another card to switch accounts.";
-          } catch (failure) {
-            if (version !== pageVersion) return;
+          }).catch((failure) => {
+            if (version !== pageVersion || selection !== scanSelection) return;
             name.textContent = "Scan a card";
-            error.textContent = failure.message;
-            // Avoid flooding the API when an unreadable account stays in view.
+            selectedId = undefined;
             retryCardAfter = Date.now() + 3000;
-          } finally {
-            acceptingCard = false;
-          }
-        })();
+            syncFailure(failure, () => checkAccount(id));
+          });
+        }
         // Returning false leaves detection running, including after a successful scan.
         return false;
       }, showCameraError);
@@ -542,6 +541,7 @@ async function scannerPage() {
   };
   document.querySelector("#add").onclick = () => changeCredit(1);
   document.querySelector("#remove").onclick = () => changeCredit(-1);
+  void checkAllAccounts();
   await start.onclick();
 }
 
@@ -551,7 +551,6 @@ async function renderPage() {
   camera = undefined;
   pageVersion++;
   activeAccount = undefined;
-  pendingChange = undefined;
   app.replaceChildren(element("p", "loading", "Loading…"));
   const match = route().pathname.match(/^\/account\/([0-9a-f-]{36})$/i);
   renderStaffNav();
@@ -580,18 +579,44 @@ try {
 } catch {
   notice("Could not check staff session. Showing read-only access.", true);
 }
+document.querySelector("#sync-retry").onclick = async () => {
+  document.querySelector("#sync-dialog").close();
+  try {
+    await syncRetry?.();
+  } catch (error) {
+    syncFailure(error, syncRetry);
+  }
+};
+document.querySelector("#sync-later").onclick = () =>
+  document.querySelector("#sync-dialog").close();
+document.querySelector("#sync-dialog").addEventListener("cancel", (event) => {
+  if (accountCache.failed) event.preventDefault();
+});
+document.querySelector("#sync-sign-in").onclick = () =>
+  document.querySelector("#sync-dialog").close();
+window.addEventListener("online", () => {
+  if (authenticated && !accountCache.failed) void accountCache.drain();
+});
+window.addEventListener("beforeunload", (event) => {
+  if (accountCache.queue.length) {
+    event.preventDefault();
+    event.returnValue = "";
+  }
+});
 renderStaffNav();
 await renderPage();
+if (authenticated) void accountCache.drain();
 
 document.addEventListener("visibilitychange", async () => {
-  if (!document.hidden && !busy && !pendingChange) {
+  if (!document.hidden) {
     try {
       const session = await api("/api/session");
       if (session.authenticated !== authenticated) {
         authenticated = session.authenticated;
         renderStaffNav();
         await renderPage();
-      } else if (activeAccount) await refreshBalance();
+      } else if (route().pathname === "/scan") await checkAllAccounts();
+      else if (activeAccount) await refreshBalance();
       else if (!["/login", "/scan"].includes(route().pathname)) {
         await loadAccounts();
       }

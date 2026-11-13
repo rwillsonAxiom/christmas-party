@@ -16,6 +16,7 @@ const api = createApi(sql, {
 const assets: Record<string, [string, string]> = {
   "/": ["index.html", "text/html; charset=utf-8"],
   "/app.js": ["app.js", "text/javascript; charset=utf-8"],
+  "/account-cache.js": ["account-cache.js", "text/javascript; charset=utf-8"],
   "/scanner.js": ["scanner.js", "text/javascript; charset=utf-8"],
   "/qr-LICENSE.txt": ["qr-LICENSE.txt", "text/plain; charset=utf-8"],
   "/config.js": ["config.js", "text/javascript; charset=utf-8"],

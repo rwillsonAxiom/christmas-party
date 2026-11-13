@@ -13,10 +13,24 @@ Edge Function** and stores accounts, sessions and retry receipts in
 - For a queue of people, choose **Scan cards**. The camera opens automatically.
   The scanner fills the screen with the camera feed, name, balance and **+ / −**
   buttons, without scrolling. Show another card to switch accounts automatically.
-- Scanning never changes credits automatically. Press **+** or **−** to add or
-  remove one credit. Repeated detection of the same card leaves its balance
-  unchanged. While a change is saving, or needs a safe retry after a connection
-  failure, the scanner keeps that account selected until the change is resolved.
+- The browser preloads all accounts and keeps a local cache scoped to the API
+  address. Known cards render instantly from their account ID while the client
+  checks the server in the background. New, uncached cards need one lookup.
+- Scanning never changes credits automatically. The **+ / −** buttons have a
+  400 ms cooldown after each scan or tap. Tapping updates the local balance
+  immediately and queues an authenticated server update. You can scan another
+  card or make another change without waiting for that update.
+- Updates are sent in order with idempotent receipt IDs. Each tab keeps its own
+  queue in session storage so reloads can retry without applying changes twice.
+  Keep the tab open until syncing completes; closing the tab or clearing browser
+  storage can lose unsent changes. A server failure opens a retry popup. Uncertain
+  requests keep their optimistic changes and receipt IDs. A definitive rejection
+  undoes unsynced changes for that account; other accounts stay queued. Changes
+  pause until Retry succeeds (sign in again first if the session expired).
+- Cached balances can be stale when other devices make changes. Background checks
+  reconcile confirmed balances without overwriting pending local updates. All
+  accounts refresh when entering the scanner and when returning to its tab.
+  Supabase Realtime is not enabled yet.
 - Camera permission is requested when entering Scan cards. Leaving the scan
   screen (using browser Back) releases the camera. No images are uploaded.
   Camera scanning needs HTTPS or localhost; plain HTTP on a phone's LAN address

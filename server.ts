@@ -16,14 +16,11 @@ const api = createApi(sql, {
 const assets: Record<string, [string, string]> = {
   "/": ["index.html", "text/html; charset=utf-8"],
   "/app.js": ["app.js", "text/javascript; charset=utf-8"],
-  "/account-cache.js": ["account-cache.js", "text/javascript; charset=utf-8"],
   "/manifest.webmanifest": [
     "manifest.webmanifest",
     "application/manifest+json",
   ],
-  "/scanner.js": ["scanner.js", "text/javascript; charset=utf-8"],
   "/qr-LICENSE.txt": ["qr-LICENSE.txt", "text/plain; charset=utf-8"],
-  "/config.js": ["config.js", "text/javascript; charset=utf-8"],
   "/style.css": ["style.css", "text/css; charset=utf-8"],
 };
 console.log(`Credit Cards: http://localhost:${port}`);

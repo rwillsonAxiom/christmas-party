@@ -2,16 +2,25 @@
   "version": "5",
   "specifiers": {
     "jsr:@paulmillr/qr@0.7.2": "0.7.2",
+    "jsr:@reububble/jsx@0.0.12": "0.0.12",
     "npm:postgres@3.4.7": "3.4.7"
   },
   "jsr": {
     "@paulmillr/qr@0.7.2": {
       "integrity": "7510cb62ace7619e7c5166f70985452dee3b08a4eeec601ba7e79da17c6302d0"
+    },
+    "@reububble/jsx@0.0.12": {
+      "integrity": "11a3240168242695df02f141ef413a958cf5605821080527137aa9095eaf9758"
     }
   },
   "npm": {
     "postgres@3.4.7": {
       "integrity": "sha512-Jtc2612XINuBjIl/QTWsV5UvE8UHuNblcO3vVADSrKsrc6RqGX6lOW1cEo3CM2v0XG4Nat8nI+YM7/f26VxXLw=="
     }
+  },
+  "workspace": {
+    "dependencies": [
+      "jsr:@reububble/jsx@0.0.12"
+    ]
   }
 }

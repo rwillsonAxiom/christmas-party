@@ -56,10 +56,13 @@ Views create native DOM nodes; account names remain text, and balance updates
 keep the live camera element mounted. The runtime and QR decoder are bundled
 locally; there are no browser imports from JSR or a CDN.
 
-Run `deno task client:build` to generate `public/app.js`. F5, development, checks,
-tests and the Pages build compile this automatically. Edit the TypeScript/TSX
-sources; the generated JavaScript is ignored by Git. Static CSS, the HTML entry
-page and the web manifest remain in `public/`.
+The HTML entry, `web/index.html`, imports `./index.tsx` directly. Run
+`deno task client:build` to bundle that HTML into `dist/`; Deno rewrites the
+script reference to its generated JavaScript filename. F5, development, checks,
+tests and the Pages build compile this automatically. Both local development
+and GitHub Pages serve the generated HTML and assets from `dist/`. All frontend
+source, including HTML, CSS, the web manifest and scanner, lives in `web/`.
+Generated output is ignored by Git.
 
 ## First deployment: GitHub Pages and Supabase Free
 
@@ -153,7 +156,7 @@ on this workstation. The tools can be on `PATH`, in a standard Windows
 Open `credit-cards.code-workspace` and press **F5**, then visit
 `http://localhost:8000`. F5 automatically:
 
-1. Compiles the TypeScript frontend, JSX views and scanner into `public/app.js`.
+1. Bundles `web/index.html` and its TypeScript/JSX imports into `dist/`.
 2. Creates and starts a dedicated PostgreSQL cluster in `data/dev-postgres`,
    bound to `127.0.0.1:15433`.
 3. Creates `credit_cards_dev` and applies any pending migrations, with checksum
@@ -273,8 +276,8 @@ expiry, CORS, QR encoding/decoding, malformed decoder inputs and untrusted scan
 contents.
 
 QR generation and decoding use **`jsr:@paulmillr/qr@0.7.2`**, pinned and
-recorded in `deno.lock`. The camera module bundles locally with the TypeScript frontend into
-`public/app.js`, then ships with the static site; no QR code CDN is loaded
+recorded in `deno.lock`. The camera module bundles locally with the TypeScript frontend from
+`web/index.html`, then ships with the static site; no QR code CDN is loaded
 in the browser. Its license ships in `qr-LICENSE.txt`. See
 `dependency-review.txt` for source-review scope, findings, integration
 precautions and the exact source hashes reviewed.

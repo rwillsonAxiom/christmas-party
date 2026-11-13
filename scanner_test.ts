@@ -1,6 +1,6 @@
 import encodeQR from "jsr:@paulmillr/qr@0.7.2";
 import decodeQR from "jsr:@paulmillr/qr@0.7.2/decode.js";
-import { cardIdFromCode, decodeFrame, startScanner } from "./scanner.ts";
+import { cardIdFromCode, decodeFrame, startScanner } from "./web/scanner.ts";
 
 function assert(
   condition: unknown,

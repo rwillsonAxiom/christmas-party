@@ -367,9 +367,8 @@ function updateBalance() {
   document.querySelector("#remove").disabled = !authenticated || busy ||
     Boolean(pendingChange && pendingChange.delta !== -1) ||
     (activeAccount.balance === 0 && !pendingChange);
-  document.querySelector("#refresh").disabled = busy;
-  const next = document.querySelector("#scan-next");
-  if (next) next.disabled = busy || Boolean(pendingChange);
+  const refresh = document.querySelector("#refresh");
+  if (refresh) refresh.disabled = busy;
 }
 
 async function changeCredit(delta) {
@@ -381,6 +380,7 @@ async function changeCredit(delta) {
   pendingChanges.set(accountId, operation);
   updateBalance();
   const status = document.querySelector("#change-status");
+  status.classList.remove("scan-warning");
   status.textContent = "Saving…";
   try {
     const updated = await api(
@@ -401,6 +401,7 @@ async function changeCredit(delta) {
     if (activeAccount?.id === accountId) {
       pendingChange = pendingChanges.get(accountId);
     }
+    status.classList.add("scan-warning");
     status.textContent = pendingChanges.has(accountId)
       ? "Couldn’t confirm the change. Press the same button to retry safely."
       : error.message;
@@ -435,28 +436,30 @@ async function scannerPage() {
     location.replace("#/login?returnTo=%2Fscan");
     return;
   }
+  document.body.classList.add("scanning");
   const version = pageVersion;
   document.title = "Scan cards · Credit Cards";
   app.innerHTML =
-    `<section class="scanner-intro"><p class="eyebrow">THE QUICK CREDIT DESK</p><h1>Scan. Credit. Next.</h1><p class="lede">Keep the camera open and work through cards here.</p></section><div class="scanner-layout"><section class="panel camera-panel"><div class="camera-frame"><video id="camera-video" autoplay muted playsinline aria-label="Live card scanner"></video><div class="camera-guide" aria-hidden="true"></div></div><p id="camera-status" role="status">Start the camera, then hold a card inside the frame.</p><div class="camera-buttons"><button id="camera-start" class="button primary">Start camera</button><button id="camera-stop" class="button secondary" hidden>Stop camera</button><button id="scan-next" class="button primary" hidden>Scan next card</button></div><p id="camera-error" class="inline-error" role="alert"></p></section><section id="scan-result" class="panel scan-result" aria-live="polite"><p class="empty-state">The person’s name and balance will appear here.</p></section></div>`;
+    `<section class="scanner-screen" aria-label="Card scanner"><div class="camera-frame"><video id="camera-video" autoplay muted playsinline aria-label="Live card scanner"></video><div class="camera-guide" aria-hidden="true"></div><p id="camera-status" class="sr-only" role="status">Opening camera…</p><div class="camera-feedback"><p id="camera-error" role="alert"></p><button id="camera-start" class="button primary" hidden>Retry camera</button></div></div><section id="scan-result" class="scan-result" aria-label="Scanned account"><h1 id="person-name">Scan a card</h1><p id="credit-value" class="credit-value" aria-label="Available credits" aria-live="polite">—</p><div class="credit-actions"><button id="remove" class="button secondary" aria-label="Remove one credit" disabled>−</button><button id="add" class="button primary" aria-label="Add one credit" disabled>+</button></div><p id="change-status" class="sr-only" role="status"></p></section></section>`;
   const video = document.querySelector("#camera-video");
   const status = document.querySelector("#camera-status");
   const error = document.querySelector("#camera-error");
   const start = document.querySelector("#camera-start");
-  const stop = document.querySelector("#camera-stop");
-  const next = document.querySelector("#scan-next");
-  const result = document.querySelector("#scan-result");
+  const name = document.querySelector("#person-name");
+  const balance = document.querySelector("#credit-value");
   let lastInvalidNotice = 0;
   let acceptingCard = false;
+  let retryCardAfter = 0;
   const showCameraError = (text) => {
+    if (version !== pageVersion) return;
     error.textContent = text;
     start.hidden = false;
     start.disabled = false;
-    stop.hidden = true;
     camera = undefined;
     status.textContent = "Camera is off.";
   };
   start.onclick = async () => {
+    start.hidden = true;
     start.disabled = true;
     error.textContent = "";
     status.textContent = "Opening camera…";
@@ -464,7 +467,10 @@ async function scannerPage() {
       const { startScanner, cardIdFromCode } = await import("./scanner.js");
       if (version !== pageVersion) return;
       const controller = await startScanner(video, (code) => {
-        if (acceptingCard || activeAccount) return true;
+        // Keep detecting, but never switch the target of an in-flight or uncertain write.
+        if (version !== pageVersion || acceptingCard || busy || pendingChange) {
+          return false;
+        }
         const id = cardIdFromCode(code);
         if (!id) {
           if (Date.now() - lastInvalidNotice > 3000) {
@@ -473,90 +479,74 @@ async function scannerPage() {
           }
           return false;
         }
-        acceptingCard = true;
         error.textContent = "";
+        if (id === activeAccount?.id || Date.now() < retryCardAfter) {
+          return false;
+        }
+        acceptingCard = true;
+        activeAccount = undefined;
+        pendingChange = undefined;
+        document.querySelector("#add").disabled = true;
+        document.querySelector("#remove").disabled = true;
+        const changeStatus = document.querySelector("#change-status");
+        changeStatus.textContent = "";
+        changeStatus.classList.remove("scan-warning");
+        name.textContent = "Loading…";
+        balance.textContent = "—";
         status.textContent = "Card found. Loading account…";
-        next.hidden = false;
-        next.disabled = true;
-        result.replaceChildren(element("p", "loading", "Loading account…"));
         (async () => {
           try {
             const account = await api(`/api/accounts/${id}`);
             if (version !== pageVersion) return;
             activeAccount = account;
             pendingChange = pendingChanges.get(id);
-            result.innerHTML =
-              `<section class="balance-panel"><p class="eyebrow">CARD FOUND</p><h2 id="person-name"></h2><p class="muted">Available credits</p><p id="credit-value" class="credit-value" aria-live="polite"></p><div class="credit-actions"><button id="remove" class="button secondary">− Remove 1</button><button id="add" class="button primary">+ Add 1</button></div><p id="change-status" class="change-status" role="status"></p><button id="refresh" class="text-button">Refresh balance</button></section>`;
-            document.querySelector("#person-name").textContent = account.name;
-            document.querySelector("#add").onclick = () => changeCredit(1);
-            document.querySelector("#remove").onclick = () => changeCredit(-1);
-            document.querySelector("#refresh").onclick = refreshBalance;
-            result.append(next);
+            name.textContent = account.name;
             updateBalance();
-            status.textContent = "Adjust the credits, then scan the next card.";
-            result.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            if (pendingChange) {
+              changeStatus.classList.add("scan-warning");
+              changeStatus.textContent =
+                "Press the same button to confirm the previous change before scanning another card.";
+            }
+            status.textContent =
+              "Card ready. Show another card to switch accounts.";
           } catch (failure) {
             if (version !== pageVersion) return;
-            result.replaceChildren(
-              element("p", "inline-error", failure.message),
-            );
-            next.disabled = false;
-            result.append(next);
-            status.textContent = "Scan another card to continue.";
+            name.textContent = "Scan a card";
+            error.textContent = failure.message;
+            // Avoid flooding the API when an unreadable account stays in view.
+            retryCardAfter = Date.now() + 3000;
           } finally {
             acceptingCard = false;
           }
         })();
-        return true;
+        // Returning false leaves detection running, including after a successful scan.
+        return false;
       }, showCameraError);
       if (version !== pageVersion) {
         controller.stop();
         return;
       }
       camera = controller;
-      start.hidden = true;
       start.disabled = false;
-      stop.hidden = false;
-      status.textContent = activeAccount
-        ? "Adjust the credits, then scan the next card."
-        : "Point the camera at a card’s QR code.";
+      status.textContent = "Point the camera at a card’s QR code.";
     } catch (failure) {
       if (version !== pageVersion) return;
       showCameraError(
         failure.name === "NotAllowedError"
-          ? "Camera access was denied. Allow camera access for this website in your browser settings, then try again."
+          ? "Camera access was denied. Allow camera access for this website in your browser settings, then retry."
           : failure.name === "NotFoundError"
           ? "No camera was found on this device."
           : failure.message,
       );
     }
   };
-  stop.onclick = () => {
-    camera?.stop();
-    camera = undefined;
-    start.hidden = false;
-    stop.hidden = true;
-    status.textContent =
-      "Camera is off. You can still update the account shown here.";
-  };
-  next.onclick = () => {
-    if (busy || pendingChange || acceptingCard) return;
-    activeAccount = undefined;
-    result.replaceChildren(
-      element("p", "empty-state", "Hold the next card inside the frame."),
-    );
-    document.querySelector(".camera-buttons").append(next);
-    next.hidden = true;
-    error.textContent = "";
-    status.textContent = camera
-      ? "Point the camera at the next card."
-      : "Start the camera to scan the next card.";
-    camera?.resume();
-    video.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  };
+  document.querySelector("#add").onclick = () => changeCredit(1);
+  document.querySelector("#remove").onclick = () => changeCredit(-1);
+  await start.onclick();
 }
 
 async function renderPage() {
+  document.body.classList.remove("scanning");
   camera?.stop();
   camera = undefined;
   pageVersion++;

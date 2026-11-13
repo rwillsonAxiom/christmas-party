@@ -10,16 +10,18 @@ Edge Function** and stores accounts, sessions and retry receipts in
 - Visitors scan their card with the phone camera to open the public balance
   page.
 - Staff choose **Staff sign in** and enter the shared password once per device.
-- For a queue of people, choose **Scan cards → Start camera**. Scan a card,
-  check the name and balance, press **Add 1** or **Remove 1**, then **Scan next
-  card**. The camera stays open and the page does not reload between cards.
-- Scanning never changes credits automatically. The displayed account remains
-  selected until staff request the next scan. An uncertain change must be
-  retried before using the next-card button.
-- Camera permission is requested only after pressing Start camera. Stop camera,
-  leaving the scan screen, or signing out releases the camera. No images are
-  uploaded. Camera scanning needs HTTPS or localhost; plain HTTP on a phone's
-  LAN address will not support camera access. GitHub Pages supplies HTTPS.
+- For a queue of people, choose **Scan cards**. The camera opens automatically.
+  The scanner fills the screen with the camera feed, name, balance and **+ / −**
+  buttons, without scrolling. Show another card to switch accounts automatically.
+- Scanning never changes credits automatically. Press **+** or **−** to add or
+  remove one credit. Repeated detection of the same card leaves its balance
+  unchanged. While a change is saving, or needs a safe retry after a connection
+  failure, the scanner keeps that account selected until the change is resolved.
+- Camera permission is requested when entering Scan cards. Leaving the scan
+  screen (using browser Back) releases the camera. No images are uploaded.
+  Camera scanning needs HTTPS or localhost; plain HTTP on a phone's LAN address
+  will not support camera access. GitHub Pages supplies HTTPS. If camera access
+  fails, an error and **Retry camera** button appear over the camera area.
 - Staff can create accounts and print individual cards or all cards. Names and
   balances are public. Account creation and credit updates require a session.
 

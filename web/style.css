@@ -720,7 +720,8 @@ body.scanning {
   height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-rows: auto auto minmax(80px, 1fr);
+  grid-template-rows: minmax(0, .8fr) minmax(0, 1.2fr) clamp(80px, 14dvh,
+    128px);
   align-items: center;
   gap: 12px;
   padding: 8px max(8px, env(safe-area-inset-right)) 8px
@@ -729,7 +730,8 @@ body.scanning {
 }
 .scan-result h1 {
   margin: 0;
-  font: 600 clamp(16px, 3vw, 20px)/1.2 ui-sans-serif, system-ui, sans-serif;
+  max-height: 100%;
+  font: 600 clamp(28px, 5dvh, 44px)/1.15 ui-sans-serif, system-ui, sans-serif;
   letter-spacing: -.5px;
   overflow: hidden;
   display: -webkit-box;
@@ -738,13 +740,15 @@ body.scanning {
 }
 .scan-result .credit-value {
   margin: 0;
-  font-size: clamp(24px, 5vw, 34px);
+  font-size: clamp(48px, 14vw, 88px);
   line-height: 1.1;
-  letter-spacing: -.5px;
+  letter-spacing: -1.5px;
   overflow-wrap: normal;
 }
 .scan-result .credit-value::after {
-  content: " credits";
+  content: "credits";
+  display: block;
+  margin-top: 4px;
   font-size: 16px;
   letter-spacing: 0;
   color: #63746a;
@@ -788,10 +792,13 @@ body.scanning {
   .scan-result {
     gap: 8px;
     padding-top: 0;
-    grid-template-rows: auto auto minmax(64px, 1fr);
+    grid-template-rows: minmax(0, .8fr) minmax(0, 1.2fr) 64px;
   }
   .scan-result h1 {
-    font-size: 16px;
+    font-size: 24px;
+  }
+  .scan-result .credit-value {
+    font-size: clamp(32px, 9dvh, 52px);
   }
   .scan-result .credit-actions .button {
     min-height: 64px;
@@ -815,7 +822,10 @@ body.scanning {
     max-height: 440px;
   }
   .scan-result h1 {
-    font-size: clamp(16px, 3vw, 20px);
+    font-size: clamp(24px, 5dvh, 40px);
+  }
+  .scan-result .credit-value {
+    font-size: clamp(32px, 9dvh, 72px);
   }
   .scanning .scan-warning {
     bottom: 0;

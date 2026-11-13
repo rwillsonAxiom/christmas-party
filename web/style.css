@@ -781,28 +781,56 @@ body.scanning {
   #print-cards {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 8mm;
+    /* Three rows plus gaps use 264mm of A4's 273mm printable height. */
+    grid-auto-rows: 84mm;
+    gap: 6mm;
   }
   .paper-card {
+    height: 84mm;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1mm;
     break-inside: avoid;
     box-shadow: none;
     border: 1px solid #999;
     border-radius: 4mm;
-    padding: 7mm;
+    padding: 4mm;
     max-width: none;
   }
+  .paper-card .eyebrow {
+    flex-shrink: 0;
+    margin: 0;
+    font-size: 7pt;
+    line-height: 1.2;
+  }
   .card-name {
-    font-size: 22pt;
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    font-size: 16pt;
+    line-height: 1.1;
   }
   .qr {
+    flex-shrink: 0;
     width: 42mm;
     height: 42mm;
   }
   .card-caption {
-    font-size: 9pt;
+    flex-shrink: 0;
+    margin: 0;
+    font-size: 8pt;
+    line-height: 1.2;
   }
   .card-link {
+    flex-shrink: 0;
+    width: 100%;
     color: black;
-    font-size: 6pt;
+    font-size: 5.5pt;
+    line-height: 1.1;
   }
 }

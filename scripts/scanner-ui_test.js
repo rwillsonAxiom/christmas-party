@@ -699,16 +699,16 @@ Deno.test("re-detection renews the hold, while cache updates and navigation do n
   assert(layer.children.length === 0);
 });
 
-Deno.test("a QR over half the scan area automatically switches accounts with a single cooldown", async () => {
+Deno.test("a QR over 33% of the scan area automatically switches accounts with a single cooldown", async () => {
   const ui = await setup();
   ui.detect("alice");
   ui.advance(400);
-  ui.detect([{ ...detected("bob"), coverage: .5 }]);
+  ui.detect([{ ...detected("bob"), coverage: .33 }]);
   assert(
     ui.nodes.get("#person-name").textContent === "alice",
-    "Exactly 50% must not switch accounts",
+    "Exactly 33% must not switch accounts",
   );
-  ui.detect([{ ...detected("bob"), coverage: .5001 }]);
+  ui.detect([{ ...detected("bob"), coverage: .3301 }]);
   assert(ui.nodes.get("#person-name").textContent === "bob");
   assert(
     ui.nodes.get("#add").disabled,

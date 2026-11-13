@@ -72,14 +72,19 @@ Deno.test("decoder safely rejects malformed image buffers and empty frames", () 
 Deno.test("camera scanning rejects insecure contexts before accessing a camera", async () => {
   let rejected = false;
   try {
-    await startScanner({} as HTMLVideoElement, () => false, () => {});
+    await startScanner(
+      {} as HTMLVideoElement,
+      () => false,
+      () => {},
+      {} as HTMLElement,
+    );
   } catch (error) {
     rejected = error instanceof Error && error.message.includes("HTTPS");
   }
   assert(rejected);
 });
 
-Deno.test("both scanner decoders ignore QR codes outside the visible center square", async () => {
+Deno.test("both scanner decoders read only inside the overlay, excluding the rest of the visible preview", async () => {
   const url =
     "https://example.test/#/account/12f04857-96da-44c0-9b01-cab5baaa1122";
   const qr = encodeQR(url, "raw", { border: 4, scale: 3 });
@@ -90,6 +95,7 @@ Deno.test("both scanner decoders ignore QR codes outside the visible center squa
     "BarcodeDetector",
     "requestAnimationFrame",
     "cancelAnimationFrame",
+    "getComputedStyle",
   ];
   const saved = new Map(
     globals.map((
@@ -100,19 +106,48 @@ Deno.test("both scanner decoders ignore QR codes outside the visible center squa
     Object.defineProperty(globalThis, key, { configurable: true, value });
   try {
     for (const native of [true, false]) {
-      for (const [width, height] of [[900, 300], [300, 900], [1200, 900]]) {
+      for (
+        const [width, height] of [[900, 300], [300, 900], [1200, 900], [
+          1800,
+          1200,
+        ]]
+      ) {
         let nextFrame: FrameRequestCallback | undefined;
         let source = new Uint8ClampedArray(width * height * 4);
         let pixels = new Uint8ClampedArray();
         let trackStopped = false;
         const found: string[] = [];
         const errors: string[] = [];
+        let previewSide = 300;
+        const rect = (
+          left: number,
+          top: number,
+          width: number,
+          height: number,
+        ) => ({
+          left,
+          top,
+          right: left + width,
+          bottom: top + height,
+          width,
+          height,
+        });
+        const guide = {
+          getBoundingClientRect: () =>
+            rect(
+              20 + previewSide * .14,
+              40 + previewSide * .14,
+              previewSide * .72,
+              previewSide * .72,
+            ),
+        };
         const video = {
           readyState: 2,
           videoWidth: width,
           videoHeight: height,
           srcObject: null,
           play: () => Promise.resolve(),
+          getBoundingClientRect: () => rect(20, 40, previewSide, previewSide),
         };
         const canvas = { width: 0, height: 0, getContext: () => context };
         const context = {
@@ -129,8 +164,11 @@ Deno.test("both scanner decoders ignore QR codes outside the visible center squa
           ) {
             assert(image === video);
             const side = Math.min(width, height);
-            assert(sx === (width - side) / 2 && sy === (height - side) / 2);
-            assert(sw === side && sh === side && dx === 0 && dy === 0);
+            const borderInset = (.14 + 2 / previewSide) * side;
+            assert(Math.abs(sx - ((width - side) / 2 + borderInset)) < 1.01);
+            assert(Math.abs(sy - ((height - side) / 2 + borderInset)) < 1.01);
+            assert(Math.abs(sw - (side - 2 * borderInset)) < 2.01 && sw === sh);
+            assert(dx === 0 && dy === 0);
             assert(dw === dh && dw <= 800, "Crop must be square and bounded");
             pixels = new Uint8ClampedArray(dw * dh * 4);
             for (let y = 0; y < dh; y++) {
@@ -146,12 +184,16 @@ Deno.test("both scanner decoders ignore QR codes outside the visible center squa
           },
           getImageData: () => ({ data: pixels }),
         };
-        const populate = (center: boolean) => {
+        const populate = (position: "hidden" | "preview-edge" | "center") => {
           source = new Uint8ClampedArray(width * height * 4).fill(255);
-          // Portrait/landscape place the hidden card fully outside the crop.
-          // The larger frame also checks a partially clipped card is not decoded.
-          const x = center ? Math.floor((width - qr.length) / 2) : 0;
-          const y = center ? Math.floor((height - qr.length) / 2) : 0;
+          const x = position === "center"
+            ? Math.floor((width - qr.length) / 2)
+            : position === "preview-edge"
+            ? (width - Math.min(width, height)) / 2
+            : 0;
+          const y = position !== "hidden"
+            ? Math.floor((height - qr.length) / 2)
+            : 0;
           for (let row = 0; row < qr.length; row++) {
             for (let col = 0; col < qr.length; col++) {
               const offset = ((y + row) * width + x + col) * 4;
@@ -173,6 +215,15 @@ Deno.test("both scanner decoders ignore QR codes outside the visible center squa
           },
         });
         set("document", { hidden: false, createElement: () => canvas });
+        set("getComputedStyle", (element: unknown) => {
+          assert(element === guide);
+          return {
+            borderLeftWidth: "2px",
+            borderTopWidth: "2px",
+            borderRightWidth: "2px",
+            borderBottomWidth: "2px",
+          };
+        });
         set("requestAnimationFrame", (callback: FrameRequestCallback) => {
           nextFrame = callback;
           return 1;
@@ -205,9 +256,10 @@ Deno.test("both scanner decoders ignore QR codes outside the visible center squa
             return false;
           },
           (error) => errors.push(error),
+          guide as unknown as HTMLElement,
         );
         try {
-          populate(false);
+          populate("hidden");
           await nextFrame!(200);
           assert(
             found.length === 0,
@@ -215,8 +267,16 @@ Deno.test("both scanner decoders ignore QR codes outside the visible center squa
               native ? "native" : "fallback"
             }, ${width}x${height})`,
           );
-          populate(true);
+          populate("preview-edge");
           await nextFrame!(400);
+          assert(
+            found.length === 0,
+            "A card inside the camera preview but outside the overlay must be ignored",
+          );
+          // The overlay and preview can resize when browser UI or orientation changes.
+          previewSide = 240;
+          populate("center");
+          await nextFrame!(600);
           assert(
             found.join() === url,
             `Visible card was not read (${

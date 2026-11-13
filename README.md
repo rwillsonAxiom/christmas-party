@@ -32,8 +32,9 @@ Edge Function** and stores accounts, sessions and retry receipts in
   accounts refresh when entering the scanner and when returning to its tab.
   Supabase Realtime is not enabled yet.
 - The scanner uses a square camera preview capped by the shorter viewport side,
-  with a larger name and wide credit buttons. Both QR decoders read only that
-  visible center-square crop. Tapping **Scan cards** requests
+  with a larger name and wide credit buttons. Both QR decoders read only inside
+  the inner square overlay, excluding its border and the surrounding preview.
+  The detection area follows the overlay when the layout changes. Tapping **Scan cards** requests
   browser fullscreen where supported. A small fullscreen control handles direct
   links and returning from fullscreen; the close control returns to accounts.
   Browsers can decline fullscreen, and iPhone browser support is limited. Add

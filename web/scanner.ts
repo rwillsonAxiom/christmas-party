@@ -41,6 +41,7 @@ export async function startScanner(
   video: HTMLVideoElement,
   onCode: (code: string) => boolean,
   onError: (message: string) => void,
+  guide: HTMLElement,
 ): Promise<{ stop(): void; resume(): void }> {
   if (!globalThis.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
     throw new Error(
@@ -101,16 +102,64 @@ export async function startScanner(
         time - lastFrame >= 160
       ) {
         lastFrame = time;
-        // Match object-fit: cover + object-position: center in the square preview.
-        // Both decoders receive only visible pixels, never the full camera frame.
-        const side = Math.min(video.videoWidth, video.videoHeight);
-        canvas.width = canvas.height = Math.min(side, 800);
+        // Map the overlay's inner border to source pixels after the preview's
+        // centered object-fit: cover crop. Measure each frame to follow resizing.
+        const preview = video.getBoundingClientRect();
+        const overlay = guide.getBoundingClientRect();
+        const borders = getComputedStyle(guide);
+        const left = Math.max(
+          preview.left,
+          overlay.left + parseFloat(borders.borderLeftWidth),
+        );
+        const top = Math.max(
+          preview.top,
+          overlay.top + parseFloat(borders.borderTopWidth),
+        );
+        const right = Math.min(
+          preview.right,
+          overlay.right - parseFloat(borders.borderRightWidth),
+        );
+        const bottom = Math.min(
+          preview.bottom,
+          overlay.bottom - parseFloat(borders.borderBottomWidth),
+        );
+        if (
+          !preview.width || !preview.height || right <= left || bottom <= top
+        ) {
+          frame = requestAnimationFrame(tick);
+          return;
+        }
+        const scale = Math.max(
+          preview.width / video.videoWidth,
+          preview.height / video.videoHeight,
+        );
+        const sourceLeft = preview.left +
+          (preview.width - video.videoWidth * scale) / 2;
+        const sourceTop = preview.top +
+          (preview.height - video.videoHeight * scale) / 2;
+        // Round inward so neither decoder sees pixels beyond the overlay.
+        const sx = Math.max(0, Math.ceil((left - sourceLeft) / scale));
+        const sy = Math.max(0, Math.ceil((top - sourceTop) / scale));
+        const width =
+          Math.min(video.videoWidth, Math.floor((right - sourceLeft) / scale)) -
+          sx;
+        const height = Math.min(
+          video.videoHeight,
+          Math.floor((bottom - sourceTop) / scale),
+        ) - sy;
+        if (width <= 0 || height <= 0) {
+          frame = requestAnimationFrame(tick);
+          return;
+        }
+        const downsample = Math.min(1, 800 / Math.max(width, height));
+        canvas.width = Math.max(1, Math.round(width * downsample));
+        canvas.height = Math.max(1, Math.round(height * downsample));
         context.drawImage(
           video,
-          (video.videoWidth - side) / 2,
-          (video.videoHeight - side) / 2,
-          side,
-          side,
+          sx,
+          sy,
+          width,
+          height,
           0,
           0,
           canvas.width,

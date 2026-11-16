@@ -17,9 +17,10 @@ Edge Function** and stores accounts, sessions and retry receipts in
   after a QR is last detected, so brief misses do not make them flicker.
   Tap a labelled QR to select its account; the selected outline is
   highlighted. A lone QR auto-selects when no account is selected. A freshly
-  detected QR can also switch accounts automatically: it needs 5% coverage when
+  detected QR can also switch accounts automatically: it needs 1% coverage when
   centered, rising linearly with its center's Euclidean distance from the scan
-  center to 25% when it fills a corner quadrant. The requirement caps at 25%.
+  center to 25% when it fills a corner quadrant. The requirement continues rising
+  beyond that distance.
   Coverage and center are measured in the inner scan square; coverage uses the
   QR's actual outlined area, including its rotation. Cards below the requirement
   leave the selection unchanged until you tap one. The details retain a compact

@@ -1,5 +1,5 @@
 // Pinned and reviewed; see dependency-review.txt and web/qr-LICENSE.txt.
-import decodeQR, { decodeQRBatch } from "jsr:@paulmillr/qr@0.7.2/decode.js";
+import decodeQR, { decodeQRBatch } from "@paulmillr/qr/decode.js";
 
 export interface Point {
   x: number;

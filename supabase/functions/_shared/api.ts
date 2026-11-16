@@ -1,4 +1,4 @@
-import encodeQR from "jsr:@paulmillr/qr@0.7.2";
+import encodeQR from "@paulmillr/qr";
 import { databaseFailure, type Sql } from "./database.ts";
 import { Accounts, AppError, UUID } from "./store.ts";
 import { StaffAuth } from "./auth.ts";

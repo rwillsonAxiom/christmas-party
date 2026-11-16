@@ -1,11 +1,10 @@
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, fromFileUrl, join, resolve } from "@std/path";
 import {
   connectDatabase,
   type Sql,
 } from "../supabase/functions/_shared/database.ts";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const root = resolve(dirname(fromFileUrl(import.meta.url)), "..");
 const data = join(root, "data");
 const cluster = join(data, "dev-postgres");
 const log = join(data, "dev-postgres.log");

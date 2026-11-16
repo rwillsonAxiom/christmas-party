@@ -29,7 +29,15 @@
       "data/"
     ]
   },
+  "lint": {
+    "rules": {
+      "include": ["no-import-prefix"]
+    }
+  },
   "imports": {
-    "@reububble/jsx": "jsr:@reububble/jsx@0.0.12"
+    "@paulmillr/qr": "jsr:@paulmillr/qr@0.7.2",
+    "@reububble/jsx": "jsr:@reububble/jsx@0.0.12",
+    "@std/path": "jsr:@std/path@1.1.6",
+    "postgres": "npm:postgres@3.4.7"
   }
 }

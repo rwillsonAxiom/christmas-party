@@ -1,5 +1,5 @@
-import postgres from "npm:postgres@3.4.7";
-export type { Sql } from "npm:postgres@3.4.7";
+import postgres from "postgres";
+export type { Sql } from "postgres";
 
 /** Actionable connection diagnostics without echoing connection strings or secrets. */
 export function databaseFailure(

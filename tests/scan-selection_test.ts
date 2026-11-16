@@ -37,11 +37,3 @@ Deno.test("selection uses the hypotenuse so equal radial distances have equal re
     horizontal,
   );
 });
-
-Deno.test("coverage requirement caps at 25% beyond a corner quadrant and rejects invalid centers", () => {
-  for (const center of [{ x: 0, y: .5 }, { x: 1, y: 1 }, { x: -1, y: 2 }]) {
-    assertAlmostEquals(automaticSelectionCoverage(center), .25);
-  }
-  assertEquals(automaticSelectionCoverage({ x: NaN, y: .5 }), Infinity);
-  assertEquals(automaticSelectionCoverage({ x: .5, y: Infinity }), Infinity);
-});

@@ -1,11 +1,10 @@
-import { timingSafeEqual } from "node:crypto";
-import type { Sql } from "./database.ts";
-import { AppError } from "./store.ts";
+import { timingSafeEqual } from "@std/crypto/timing-safe-equal";
+import { encodeHex } from "@std/encoding/hex";
+import type { Sql } from "supabase/functions/_shared/database.ts";
+import { AppError } from "supabase/functions/_shared/store.ts";
 
 const SESSION_MS = 12 * 60 * 60 * 1000;
 const encoder = new TextEncoder();
-const hex = (bytes: Uint8Array) =>
-  Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 const digest = async (value: string) =>
   new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(value)));
 
@@ -18,12 +17,12 @@ export class StaffAuth {
   }
   private async key(token: string): Promise<string> {
     // Bind sessions to the password; persist neither passwords nor raw tokens.
-    return hex(await digest(`${this.password}\0${token}`));
+    return encodeHex(await digest(`${this.password}\0${token}`));
   }
   async authenticated(request: Request): Promise<boolean> {
-    if (!this.password) return false;
+    if (this.password === undefined || this.password.length === 0) return false;
     const token = this.token(request);
-    if (!token) return false;
+    if (token === undefined) return false;
     const rows = await this
       .sql`SELECT token_hash FROM credit_cards.staff_sessions WHERE token_hash = ${await this
       .key(token)} AND expires_at > now()`;
@@ -38,7 +37,7 @@ export class StaffAuth {
     password: unknown,
     request: Request,
   ): Promise<{ token: string; expiresAt: string }> {
-    if (!this.password) {
+    if (this.password === undefined || this.password.length === 0) {
       throw new AppError(
         503,
         "Staff login is not configured. Set STAFF_PASSWORD on the server.",
@@ -62,7 +61,7 @@ export class StaffAuth {
     await this.logout(request);
     await this
       .sql`DELETE FROM credit_cards.staff_sessions WHERE expires_at <= now()`;
-    const token = hex(crypto.getRandomValues(new Uint8Array(32)));
+    const token = encodeHex(crypto.getRandomValues(new Uint8Array(32)));
     const expiresAt = new Date(Date.now() + SESSION_MS).toISOString();
     await this
       .sql`INSERT INTO credit_cards.staff_sessions (token_hash, expires_at) VALUES (${await this
@@ -71,7 +70,10 @@ export class StaffAuth {
   }
   async logout(request: Request): Promise<void> {
     const token = this.token(request);
-    if (token && this.password) {
+    if (
+      token !== undefined && this.password !== undefined &&
+      this.password.length > 0
+    ) {
       await this
         .sql`DELETE FROM credit_cards.staff_sessions WHERE token_hash = ${await this
         .key(token)}`;

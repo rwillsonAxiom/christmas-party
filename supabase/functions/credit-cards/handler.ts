@@ -2,9 +2,11 @@
 export function hostedHandler(api: (request: Request) => Promise<Response>) {
   return (request: Request) => {
     const url = new URL(request.url);
-    url.pathname =
-      url.pathname.replace(/^\/(?:functions\/v1\/)?credit-cards(?=\/|$)/, "") ||
-      "/";
+    const path = url.pathname.replace(
+      /^\/(?:functions\/v1\/)?credit-cards(?=\/|$)/,
+      "",
+    );
+    url.pathname = path.length > 0 ? path : "/";
     return api(new Request(url, request));
   };
 }

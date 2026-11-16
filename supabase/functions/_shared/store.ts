@@ -1,4 +1,4 @@
-import type { Sql } from "./database.ts";
+import type { Sql } from "supabase/functions/_shared/database.ts";
 
 export interface Account {
   id: string;
@@ -39,11 +39,14 @@ export class Accounts {
     const rows = await this.sql<
       AccountRow[]
     >`SELECT id, name, balance, created_at FROM credit_cards.accounts WHERE id = ${id}`;
-    if (!rows.length) throw new AppError(404, "Account not found.");
+    if (rows.length === 0) throw new AppError(404, "Account not found.");
     return account(rows[0]);
   }
   async create(name: unknown, balance: unknown): Promise<Account> {
-    if (typeof name !== "string" || !name.trim() || name.trim().length > 80) {
+    if (
+      typeof name !== "string" || name.trim().length === 0 ||
+      name.trim().length > 80
+    ) {
       throw new AppError(400, "Enter a name between 1 and 80 characters.");
     }
     if (
@@ -78,11 +81,11 @@ export class Accounts {
       const existing = await tx<
         AccountRow[]
       >`SELECT id, name, balance, created_at FROM credit_cards.accounts WHERE id = ${id} FOR UPDATE`;
-      if (!existing.length) throw new AppError(404, "Account not found.");
+      if (existing.length === 0) throw new AppError(404, "Account not found.");
       const operations = await tx<
         { delta: number }[]
       >`SELECT delta FROM credit_cards.credit_operations WHERE account_id = ${id} AND request_id = ${requestId}`;
-      if (operations.length) {
+      if (operations.length > 0) {
         if (operations[0].delta !== delta) {
           throw new AppError(
             409,

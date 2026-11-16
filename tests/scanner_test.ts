@@ -1,19 +1,33 @@
+import { assert, assertAlmostEquals, assertEquals } from "@std/assert";
 import encodeQR from "@paulmillr/qr";
 import decodeQR from "@paulmillr/qr/decode.js";
 import {
   cardIdFromCode,
   decodeFrame,
   decodeFrameAll,
+  qrCenter,
   qrCoverage,
+  type ScannedCode,
   startScanner,
-} from "./web/scanner.ts";
+} from "web/scanner.ts";
 
-function assert(
-  condition: unknown,
-  message = "Assertion failed",
-): asserts condition {
-  if (!condition) throw new Error(message);
-}
+Deno.test("QR center is normalized to the scan image and follows the detected corners", () => {
+  const corners = [{ x: 50, y: 25 }, { x: 150, y: 25 }, { x: 150, y: 75 }, {
+    x: 50,
+    y: 75,
+  }];
+  assertEquals(qrCenter(corners, 200, 100), { x: .5, y: .5 });
+  assertEquals(qrCenter(corners, 400, 200), { x: .25, y: .25 });
+  assertEquals(
+    qrCenter(corners.map(({ x, y }) => ({ x: x * 2, y: y * 2 })), 400, 200),
+    { x: .5, y: .5 },
+  );
+  const diamond = [{ x: 100, y: 0 }, { x: 200, y: 50 }, { x: 100, y: 100 }, {
+    x: 0,
+    y: 50,
+  }];
+  assertEquals(qrCenter(diamond, 200, 100), { x: .5, y: .5 });
+});
 
 Deno.test("QR coverage uses polygon area rather than the bounding box", () => {
   const diamond = [{ x: 100, y: 0 }, { x: 200, y: 100 }, { x: 100, y: 200 }, {
@@ -153,6 +167,7 @@ Deno.test("both scanner decoders read only inside the overlay, excluding the res
         let trackStopped = false;
         const found: string[] = [];
         let latest: string[] = [];
+        let latestCodes: ScannedCode[] = [];
         const errors: string[] = [];
         let previewSide = 300;
         const rect = (
@@ -305,8 +320,25 @@ Deno.test("both scanner decoders read only inside the overlay, excluding the res
         const scanner = await startScanner(
           video as unknown as HTMLVideoElement,
           (codes) => {
+            latestCodes = codes;
             latest = codes.map((code) => code.value);
             for (const code of codes) {
+              assert(
+                code.center.x >= 0 && code.center.x <= 1 &&
+                  code.center.y >= 0 && code.center.y <= 1,
+              );
+              const inset = .14 + 2 / previewSide;
+              assertAlmostEquals(
+                code.corners.reduce((sum, point) => sum + point.x, 0) / 4,
+                inset + code.center.x * (1 - 2 * inset),
+                .005,
+                "Center must stay in scan space while corners are mapped to the preview",
+              );
+              assertAlmostEquals(
+                code.corners.reduce((sum, point) => sum + point.y, 0) / 4,
+                inset + code.center.y * (1 - 2 * inset),
+                .005,
+              );
               assert(
                 code.coverage > 0 && code.coverage <= 1,
                 "Both decoder paths must report scan-square coverage",
@@ -352,6 +384,8 @@ Deno.test("both scanner decoders read only inside the overlay, excluding the res
             }, ${width}x${height})`,
           );
           assert(errors.length === 0);
+          assertAlmostEquals(latestCodes[0].center.x, .5, .01);
+          assertAlmostEquals(latestCodes[0].center.y, .5, .01);
           if (Math.min(width, height) >= 900) {
             populate("multiple");
             await nextFrame!(800);
@@ -373,8 +407,9 @@ Deno.test("both scanner decoders read only inside the overlay, excluding the res
   } finally {
     for (const key of globals) {
       const descriptor = saved.get(key);
-      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
-      else Reflect.deleteProperty(globalThis, key);
+      if (descriptor !== undefined) {
+        Object.defineProperty(globalThis, key, descriptor);
+      } else Reflect.deleteProperty(globalThis, key);
     }
   }
 });

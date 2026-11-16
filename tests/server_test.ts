@@ -1,14 +1,8 @@
-import { createApi } from "./supabase/functions/_shared/api.ts";
-import { connectDatabase } from "./supabase/functions/_shared/database.ts";
-import { Accounts, AppError } from "./supabase/functions/_shared/store.ts";
-import { hostedHandler } from "./supabase/functions/credit-cards/handler.ts";
-
-function assert(
-  condition: unknown,
-  message = "Assertion failed",
-): asserts condition {
-  if (!condition) throw new Error(message);
-}
+import { assert } from "@std/assert";
+import { createApi } from "supabase/functions/_shared/api.ts";
+import { connectDatabase } from "supabase/functions/_shared/database.ts";
+import { Accounts, AppError } from "supabase/functions/_shared/store.ts";
+import { hostedHandler } from "supabase/functions/credit-cards/handler.ts";
 
 Deno.test("Supabase route adapter preserves JSON bodies and bearer headers", async () => {
   const handler = hostedHandler(async (request) =>
@@ -41,7 +35,10 @@ Deno.test("Supabase route adapter preserves JSON bodies and bearer headers", asy
 
 Deno.test("PostgreSQL storage and API integration", async (t) => {
   const connection = Deno.env.get("TEST_DATABASE_URL");
-  if (!connection || !new URL(connection).pathname.endsWith("_test")) {
+  if (
+    connection === undefined || connection.length === 0 ||
+    !new URL(connection).pathname.endsWith("_test")
+  ) {
     throw new Error(
       "Set TEST_DATABASE_URL to an isolated PostgreSQL database whose name ends in _test. Tests replace only that database's credit_cards schema.",
     );
@@ -79,7 +76,7 @@ Deno.test("PostgreSQL storage and API integration", async (t) => {
           method: body === undefined ? "GET" : "POST",
           headers: {
             origin,
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...(token.length > 0 ? { Authorization: `Bearer ${token}` } : {}),
             ...(body === undefined
               ? {}
               : { "Content-Type": "application/json" }),

@@ -17,10 +17,13 @@ Edge Function** and stores accounts, sessions and retry receipts in
   after a QR is last detected, so brief misses do not make them flicker.
   Tap a labelled QR to select its account; the selected outline is
   highlighted. A lone QR auto-selects when no account is selected. A freshly
-  detected QR covering more than 25% of the inner scan square also auto-selects,
-  even when another account is selected. Coverage uses the QR's actual outlined
-  area, including its rotation. Smaller cards leave the selection unchanged until
-  you tap one. The details retain a compact selected-account name.
+  detected QR can also switch accounts automatically: it needs 5% coverage when
+  centered, rising linearly with its center's Euclidean distance from the scan
+  center to 25% when it fills a corner quadrant. The requirement caps at 25%.
+  Coverage and center are measured in the inner scan square; coverage uses the
+  QR's actual outlined area, including its rotation. Cards below the requirement
+  leave the selection unchanged until you tap one. The details retain a compact
+  selected-account name.
 - The browser preloads all accounts and keeps a local cache scoped to the API
   address. Known cards render instantly from their account ID while the client
   checks the server in the background. New, uncached cards need one lookup.
@@ -59,13 +62,28 @@ Edge Function** and stores accounts, sessions and retry receipts in
 
 ## Frontend source
 
-The website source lives in `web/index.tsx` (routing and interactions),
-`web/views.tsx` (JSX layouts), `web/account-cache.ts` (cached accounts and update
-queue), and `web/types.ts` (shared frontend types). JSX uses
+The website starts in `web/index.tsx`, whose `Application` class connects routing,
+staff sessions, account pages, and scanning. Separate controllers own those
+interactions. `web/views/` contains the JSX layouts and native custom elements:
+`account-card`, `account-row`, `staff-login`, and `card-scanner`. Each custom element
+has its own class and renders into light DOM when connected. The shell, dashboard,
+and account layouts remain plain functions returning arrays of DOM nodes.
+`web/account-cache.ts` owns cached accounts and the update queue;
+`web/types.ts` defines shared frontend types. JSX uses
 `jsr:@reububble/jsx@0.0.12`, added with `deno add` and pinned in `deno.lock`.
 Views create native DOM nodes; account names remain text, and balance updates
 keep the live camera element mounted. The runtime and QR decoder are bundled
 locally; there are no browser imports from JSR or a CDN.
+
+Source code lives under `web/` (frontend), `server/` (local HTTP server),
+`scripts/` (development and build tools), `supabase/` (hosted backend), and
+`tests/` (automated tests). Each folder has a matching import alias in `deno.json`.
+The server entry point is `server/main.ts`; local development starts through
+`scripts/dev.ts`. The Supabase function also defines its `supabase/` alias in its
+deployment configuration.
+Prefer JSR `@std` packages for shared utilities, including test assertions,
+filesystem helpers, encoding, and path handling. Declare packages in the import
+map and use their bare specifiers in source files.
 
 The HTML entry, `web/index.html`, imports `./index.tsx` directly. Run
 `deno task client:build` to bundle that HTML into `dist/`; Deno rewrites the
@@ -181,7 +199,7 @@ Supabase project are unaffected. F5 uses the managed local database even when
 for this loopback-only development cluster. No `.vscode` directory is created.
 
 If `.env` supplies `STAFF_PASSWORD`, local login uses it. Otherwise the local
-staff password is **`local-dev`**. The default password is confined to `dev.ts`;
+staff password is **`local-dev`**. The default password is confined to `scripts/dev.ts`;
 the configured/hosted server still disables staff login when no password is set.
 
 **Shift+F5** stops the app and its local PostgreSQL instance, retaining the

@@ -1,4 +1,5 @@
-import { sessionPoolerUrl } from "./deploy-database.ts";
+import { sessionPoolerUrl } from "scripts/deploy-database.ts";
+import { assertEquals, assertThrows } from "@std/assert";
 
 Deno.test("deployment selects the primary session pooler and strips credentials", () => {
   const config = [
@@ -21,7 +22,7 @@ Deno.test("deployment selects the primary session pooler and strips credentials"
   const actual = sessionPoolerUrl(config, "example");
   const expected =
     "postgresql://postgres.example@aws-1-region.pooler.supabase.com:5432/postgres?sslmode=require";
-  if (actual !== expected) throw new Error(`Unexpected pooler URL: ${actual}`);
+  assertEquals(actual, expected);
 });
 
 Deno.test("deployment rejects missing, invalid and non-shared primary poolers", () => {
@@ -42,12 +43,6 @@ Deno.test("deployment rejects missing, invalid and non-shared primary poolers", 
       }],
     ]
   ) {
-    let rejected = false;
-    try {
-      sessionPoolerUrl(config, "example");
-    } catch {
-      rejected = true;
-    }
-    if (!rejected) throw new Error("Accepted invalid pooler configuration.");
+    assertThrows(() => sessionPoolerUrl(config, "example"));
   }
 });

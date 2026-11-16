@@ -5,7 +5,7 @@ export type { Sql } from "postgres";
 export function databaseFailure(
   error: unknown,
 ): { code: string; message: string } {
-  const detail = error && typeof error === "object"
+  const detail = error !== null && typeof error === "object"
     ? error as { code?: unknown; cause?: { code?: unknown } }
     : {};
   const rawCode = detail.code ?? detail.cause?.code;

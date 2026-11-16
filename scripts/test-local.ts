@@ -1,4 +1,4 @@
-import { prepareLocalDatabase } from "./dev-db.ts";
+import { prepareLocalDatabase } from "scripts/dev-db.ts";
 const { testUrl } = await prepareLocalDatabase();
 const result = await new Deno.Command(Deno.execPath(), {
   args: ["task", "test"],

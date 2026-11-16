@@ -1,14 +1,16 @@
-import type { ScannedCode } from "./scanner.ts";
+import type { ScannedCode } from "web/scanner.ts";
 
 export interface AccountTarget extends ScannedCode {
   accountId: string;
 }
 
 function sortTargets(targets: AccountTarget[]) {
-  return [...targets].sort((a, b) =>
-    a.value.localeCompare(b.value) || a.corners[0].x - b.corners[0].x ||
-    a.corners[0].y - b.corners[0].y
-  );
+  return [...targets].sort((a, b) => {
+    const valueOrder = a.value.localeCompare(b.value);
+    if (valueOrder !== 0) return valueOrder;
+    const xOrder = a.corners[0].x - b.corners[0].x;
+    return xOrder !== 0 ? xOrder : a.corners[0].y - b.corners[0].y;
+  });
 }
 
 export class RecentTargets {
@@ -21,7 +23,7 @@ export class RecentTargets {
   observe(targets: AccountTarget[], now: number) {
     const occurrences = new Map<string, number>();
     for (const target of sortTargets(targets)) {
-      const occurrence = occurrences.get(target.value) || 0;
+      const occurrence = occurrences.get(target.value) ?? 0;
       occurrences.set(target.value, occurrence + 1);
       this.tracked.set(`${target.value}:${occurrence}`, {
         target,
@@ -38,7 +40,7 @@ export class RecentTargets {
   }
 
   nextExpiry(): number | undefined {
-    if (!this.tracked.size) return;
+    if (this.tracked.size === 0) return;
     return Math.min(
       ...[...this.tracked.values()].map((entry) =>
         entry.lastSeen + this.holdMs
@@ -72,12 +74,12 @@ export class ScanTargets {
     const occurrences = new Map<string, number>();
     const sorted = sortTargets(targets);
     for (const target of sorted) {
-      const occurrence = occurrences.get(target.value) || 0;
+      const occurrence = occurrences.get(target.value) ?? 0;
       occurrences.set(target.value, occurrence + 1);
       const key = `${target.value}:${occurrence}`;
       seen.add(key);
       let node = this.nodes.get(key);
-      if (!node) {
+      if (node === undefined) {
         const edges = Array.from(
           { length: 4 },
           () => <span className="qr-edge" aria-hidden="true" /> as HTMLElement,
@@ -95,16 +97,17 @@ export class ScanTargets {
       }
       const { button, edges, label } = node;
       const accountName = name(target.accountId);
-      label.textContent = accountName || "Loading name…";
+      const hasName = accountName !== undefined && accountName.length > 0;
+      label.textContent = hasName ? accountName : "Loading name…";
       button.setAttribute(
         "aria-label",
-        accountName ? `Select ${accountName}` : "Select account; name loading",
+        hasName ? `Select ${accountName}` : "Select account; name loading",
       );
       button.setAttribute(
         "aria-pressed",
         String(selected === target.accountId),
       );
-      button.title = accountName || "Loading name…";
+      button.title = hasName ? accountName : "Loading name…";
       button.classList.toggle("is-selected", selected === target.accountId);
       const xs = target.corners.map((p) => p.x),
         ys = target.corners.map((p) => p.y);

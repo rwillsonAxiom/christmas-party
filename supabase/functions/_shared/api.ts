@@ -1,7 +1,10 @@
 import encodeQR from "@paulmillr/qr";
-import { databaseFailure, type Sql } from "./database.ts";
-import { Accounts, AppError, UUID } from "./store.ts";
-import { StaffAuth } from "./auth.ts";
+import {
+  databaseFailure,
+  type Sql,
+} from "supabase/functions/_shared/database.ts";
+import { Accounts, AppError, UUID } from "supabase/functions/_shared/store.ts";
+import { StaffAuth } from "supabase/functions/_shared/auth.ts";
 
 export interface ApiOptions {
   publicUrl: string;
@@ -10,8 +13,10 @@ export interface ApiOptions {
 export function createApi(sql: Sql, options: ApiOptions) {
   const frontend = new URL(options.publicUrl);
   if (
-    !["http:", "https:"].includes(frontend.protocol) || frontend.search ||
-    frontend.hash || frontend.username || frontend.password
+    !["http:", "https:"].includes(frontend.protocol) ||
+    frontend.search.length > 0 ||
+    frontend.hash.length > 0 || frontend.username.length > 0 ||
+    frontend.password.length > 0
   ) {
     throw new Error(
       "PUBLIC_URL must be an HTTP(S) frontend URL without credentials, query or fragment.",
@@ -41,7 +46,7 @@ export function createApi(sql: Sql, options: ApiOptions) {
       url: `${publicUrl}/#/account/${account.id}`,
     });
     try {
-      if (origin && origin !== frontend.origin) {
+      if (origin !== null && origin.length > 0 && origin !== frontend.origin) {
         throw new AppError(
           403,
           "This website is not allowed to access the API.",
@@ -52,7 +57,8 @@ export function createApi(sql: Sql, options: ApiOptions) {
       }
       if (
         request.method === "POST" &&
-        !request.headers.get("content-type")?.startsWith("application/json")
+        request.headers.get("content-type")?.startsWith("application/json") !==
+          true
       ) throw new AppError(415, "Send JSON data.");
       if (url.pathname === "/api/session" && request.method === "GET") {
         return json({ authenticated: await auth.authenticated(request) });
@@ -75,7 +81,7 @@ export function createApi(sql: Sql, options: ApiOptions) {
         if (request.method === "POST") {
           await auth.require(request);
           const body = await request.json();
-          if (!body || typeof body !== "object") {
+          if (body === null || typeof body !== "object") {
             throw new AppError(
               400,
               "Send an account name and starting balance.",
@@ -91,7 +97,7 @@ export function createApi(sql: Sql, options: ApiOptions) {
       const match = url.pathname.match(
         /^\/api\/accounts\/([^/]+)(?:\/(credits|qr))?$/,
       );
-      if (match) {
+      if (match !== null) {
         const [, id, action] = match;
         if (!UUID.test(id)) throw new AppError(404, "Account not found.");
         if (request.method === "GET" && action === "qr") {
@@ -104,13 +110,13 @@ export function createApi(sql: Sql, options: ApiOptions) {
             headers: { ...headers, "Content-Type": "image/svg+xml" },
           });
         }
-        if (request.method === "GET" && !action) {
+        if (request.method === "GET" && action === undefined) {
           return json(withUrl(await accounts.get(id)));
         }
         if (request.method === "POST" && action === "credits") {
           await auth.require(request);
           const body = await request.json();
-          if (!body || typeof body !== "object") {
+          if (body === null || typeof body !== "object") {
             throw new AppError(400, "Send a credit change.");
           }
           return json(

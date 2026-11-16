@@ -3,7 +3,7 @@ import {
   type Api,
   asError,
   type CreditOperation,
-} from "./types.ts";
+} from "web/types.ts";
 
 // Confirmed server records and unacknowledged deltas are kept separately.
 // Reads can never replace a record while its writes are pending.
@@ -30,15 +30,15 @@ export class AccountCache {
     Object.assign(this, options);
     const { cacheStorage, queueStorage, key } = options;
     try {
-      for (const account of JSON.parse(cacheStorage?.getItem(key) || "[]")) {
+      for (const account of JSON.parse(cacheStorage?.getItem(key) ?? "[]")) {
         this.remember(account);
       }
     } catch {
       /* A damaged public cache must not prevent restoring the outbox. */
     }
     try {
-      const saved = JSON.parse(queueStorage?.getItem(key) || "null");
-      if (saved) {
+      const saved = JSON.parse(queueStorage?.getItem(key) ?? "null");
+      if (typeof saved === "object" && saved !== null) {
         for (const account of saved.records) this.remember(account);
         this.queue = saved.queue;
       }
@@ -47,7 +47,8 @@ export class AccountCache {
 
   remember(account: Account) {
     if (
-      !account || typeof account.id !== "string" ||
+      account === null || account === undefined ||
+      typeof account.id !== "string" ||
       typeof account.name !== "string" ||
       !Number.isSafeInteger(account.balance) ||
       account.balance < 0 || account.balance > 1_000_000
@@ -57,7 +58,7 @@ export class AccountCache {
 
   get(id: string) {
     const record = this.records.get(id);
-    if (!record) return;
+    if (record === undefined) return;
     const balance = this.queue.filter((op) => op.accountId === id)
       .reduce((sum, op) => sum + op.delta, record.balance);
     return { ...record, balance };
@@ -73,7 +74,7 @@ export class AccountCache {
   }
 
   revision(id: string) {
-    return this.revisions.get(id) || 0;
+    return this.revisions.get(id) ?? 0;
   }
 
   changed(id: string) {
@@ -118,7 +119,7 @@ export class AccountCache {
     for (const account of accounts) {
       if (
         !this.pending(account.id) &&
-        (revisions.get(account.id) || 0) === this.revision(account.id)
+        (revisions.get(account.id) ?? 0) === this.revision(account.id)
       ) this.remember(account);
     }
     this.persist();
@@ -129,13 +130,13 @@ export class AccountCache {
     if (this.failed) {
       throw new Error("Retry the queued changes before making more changes.");
     }
-    if (!this.queueStorage) {
+    if (this.queueStorage === undefined) {
       throw new Error(
         "Browser storage is unavailable. Allow storage for this website before changing credits.",
       );
     }
     const account = this.get(accountId);
-    if (!account || ![1, -1].includes(delta)) {
+    if (account === undefined || ![1, -1].includes(delta)) {
       throw new Error("Scan an account first.");
     }
     if (account.balance + delta < 0 || account.balance + delta > 1_000_000) {
@@ -159,7 +160,7 @@ export class AccountCache {
     if (this.running || this.failed) return;
     this.running = true;
     try {
-      while (this.queue.length && !this.failed) {
+      while (this.queue.length > 0 && !this.failed) {
         const operation = this.queue[0];
         const { accountId, delta, requestId } = operation;
         try {
@@ -176,7 +177,7 @@ export class AccountCache {
           } catch (error) {
             // Retrying an acknowledged receipt is safe, even if saving the
             // acknowledgement locally failed. Keep its original base meanwhile.
-            if (previous) this.records.set(accountId, previous);
+            if (previous !== undefined) this.records.set(accountId, previous);
             else this.records.delete(accountId);
             this.queue.unshift(operation);
             throw error;
@@ -202,12 +203,15 @@ export class AccountCache {
             }
           }
           this.onChange();
+          const accountName = this.records.get(accountId)?.name;
+          const displayName =
+            accountName === undefined || accountName.length === 0
+              ? "this account"
+              : accountName;
           this.onError(
             new Error(
               rejected
-                ? `${error.message} Unsynced changes for ${
-                  this.records.get(accountId)?.name || "this account"
-                } were undone locally. Other accounts' changes remain queued.`
+                ? `${error.message} Unsynced changes for ${displayName} were undone locally. Other accounts' changes remain queued.`
                 : `${error.message} Changes are saved on this device and are waiting to sync.`,
             ),
           );

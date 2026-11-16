@@ -35,7 +35,7 @@
           "--allow-run",
           "--allow-env"
         ],
-        "program": "${workspaceFolder:credit-cards}/dev.ts",
+        "program": "${workspaceFolder:credit-cards}/scripts/dev.ts",
         "cwd": "${workspaceFolder:credit-cards}",
         "attachSimplePort": 9229,
         "console": "integratedTerminal"

@@ -1,19 +1,21 @@
 import {
   connectDatabase,
   databaseFailure,
-} from "../supabase/functions/_shared/database.ts";
+} from "supabase/functions/_shared/database.ts";
 
 const connection = Deno.env.get("APP_DATABASE_URL");
-if (!connection) throw new Error("APP_DATABASE_URL is missing from .env.");
+if (connection === undefined || connection.length === 0) {
+  throw new Error("APP_DATABASE_URL is missing from .env.");
+}
 const url = new URL(connection);
 console.log(
   "Database target:",
   JSON.stringify({
     host: url.hostname,
-    port: url.port || "5432",
+    port: url.port.length > 0 ? url.port : "5432",
     database: url.pathname.slice(1),
-    passwordSet: Boolean(url.password),
-    staffPasswordSet: Boolean(Deno.env.get("STAFF_PASSWORD")),
+    passwordSet: url.password.length > 0,
+    staffPasswordSet: (Deno.env.get("STAFF_PASSWORD") ?? "").length > 0,
     publicUrl: Deno.env.get("PUBLIC_URL"),
   }),
 );
@@ -25,8 +27,9 @@ try {
     await sql`SELECT table_name FROM information_schema.tables WHERE table_schema = 'credit_cards' ORDER BY table_name`;
   console.log(
     "App tables:",
-    tables.map((r) => r.table_name).join(", ") ||
-      "NONE — the database migration has not been applied.",
+    tables.length > 0
+      ? tables.map((r) => r.table_name).join(", ")
+      : "NONE — the database migration has not been applied.",
   );
   await sql`SELECT id, name, balance, created_at FROM credit_cards.accounts LIMIT 0`;
   console.log("Account query: OK");
@@ -47,7 +50,11 @@ try {
         decodeURIComponent(url.password),
         Deno.env.get("STAFF_PASSWORD"),
       ]
-    ) if (secret) safe = safe.split(secret).join("[redacted]");
+    ) {
+      if (secret !== undefined && secret.length > 0) {
+        safe = safe.split(secret).join("[redacted]");
+      }
+    }
     return safe.replace(
       /postgres(?:ql)?:\/\/[^\s]+/g,
       "[database URL redacted]",

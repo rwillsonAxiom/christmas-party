@@ -3,5 +3,7 @@ data/
 .env.*
 !.env.example
 dist/
+scripts/scanner-ui_test.js
+scripts/scanner-ui_test.ts
 supabase/.temp/
 supabase/.branches/

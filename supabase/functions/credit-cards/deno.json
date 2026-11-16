@@ -1,5 +1,8 @@
 {
   "imports": {
+    "@std/crypto": "jsr:@std/crypto@1.1.0",
+    "@std/encoding": "jsr:@std/encoding@1.0.11",
+    "supabase/": "../../",
     "@paulmillr/qr": "jsr:@paulmillr/qr@0.7.2",
     "postgres": "npm:postgres@3.4.7"
   }

@@ -9,7 +9,25 @@ export interface ScannedCode {
   value: string;
   // Decoder coordinates are pixels; startScanner reports preview-relative 0..1 coordinates.
   corners: Point[];
+  // Normalized to the scan crop, independent of the preview: (0.5, 0.5) is centered.
+  center: Point;
+  // Fraction of the scan crop occupied by the QR quadrilateral.
   coverage: number;
+}
+
+export function qrCenter(
+  corners: Point[],
+  width: number,
+  height: number,
+): Point {
+  const total = corners.reduce(
+    (sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }),
+    { x: 0, y: 0 },
+  );
+  return {
+    x: total.x / (corners.length * width),
+    y: total.y / (corners.length * height),
+  };
 }
 
 // Use the actual quadrilateral, not its bounding box (which overstates tilted QRs).
@@ -44,6 +62,7 @@ export async function decodeFrameAll(
           codes.push({
             value: result,
             corners,
+            center: qrCenter(corners, width, height),
             coverage: qrCoverage(corners, width, height),
           });
         }
@@ -57,8 +76,8 @@ export function cardIdFromCode(value: string): string | undefined {
   try {
     const url = new URL(value);
     if (
-      !["http:", "https:"].includes(url.protocol) || url.username ||
-      url.password
+      !["http:", "https:"].includes(url.protocol) || url.username.length > 0 ||
+      url.password.length > 0
     ) return;
     const uuid =
       "([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})";
@@ -97,21 +116,26 @@ export async function startScanner(
   onError: (message: string) => void,
   guide: HTMLElement,
 ): Promise<{ stop(): void }> {
-  if (!globalThis.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+  if (
+    globalThis.isSecureContext !== true ||
+    typeof navigator.mediaDevices?.getUserMedia !== "function"
+  ) {
     throw new Error(
       "Camera scanning needs HTTPS. Use the deployed website, or localhost when testing on this computer.",
     );
   }
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) throw new Error("This browser cannot read camera images.");
+  if (context === null) {
+    throw new Error("This browser cannot read camera images.");
+  }
   let detector: Detector | undefined;
   const NativeDetector =
     (globalThis as unknown as { BarcodeDetector?: DetectorConstructor })
       .BarcodeDetector;
   try {
     if (
-      NativeDetector &&
+      NativeDetector !== undefined &&
       (await NativeDetector.getSupportedFormats()).includes("qr_code")
     ) detector = new NativeDetector({ formats: ["qr_code"] });
   } catch { /* Use the QR library if native detection is unavailable. */ }
@@ -178,7 +202,8 @@ export async function startScanner(
           overlay.bottom - parseFloat(borders.borderBottomWidth),
         );
         if (
-          !preview.width || !preview.height || right <= left || bottom <= top
+          preview.width === 0 || preview.height === 0 || right <= left ||
+          bottom <= top
         ) {
           onCodes([]);
           frame = requestAnimationFrame(tick);
@@ -222,13 +247,14 @@ export async function startScanner(
           canvas.height,
         );
         let codes: ScannedCode[] = [];
-        if (detector) {
+        if (detector !== undefined) {
           try {
             codes = (await detector.detect(canvas)).map((
               { rawValue, cornerPoints },
             ) => ({
               value: rawValue,
               corners: cornerPoints,
+              center: qrCenter(cornerPoints, canvas.width, canvas.height),
               coverage: qrCoverage(cornerPoints, canvas.width, canvas.height),
             }));
           } catch {
@@ -236,7 +262,7 @@ export async function startScanner(
           }
         }
         if (stopped) return;
-        if (!detector) {
+        if (detector === undefined) {
           codes = await decodeFrameAll(
             context.getImageData(0, 0, canvas.width, canvas.height).data,
             canvas.width,
@@ -253,9 +279,10 @@ export async function startScanner(
           )
         );
         onCodes(
-          contained.map(({ value, corners, coverage }) => ({
+          contained.map(({ value, corners, coverage, center }) => ({
             value,
             coverage,
+            center,
             corners: corners.map(({ x, y }) => ({
               x: (sourceLeft + (sx + x * width / canvas.width) * scale -
                 preview.left) / preview.width,

@@ -30,7 +30,12 @@ if (import.meta.main) {
   const token = Deno.env.get("SUPABASE_ACCESS_TOKEN");
   const projectRef = Deno.env.get("SUPABASE_PROJECT_REF");
   const output = Deno.env.get("GITHUB_OUTPUT");
-  if (!token || !projectRef || !output || !/^[a-z0-9]+$/.test(projectRef)) {
+  if (
+    token === undefined || token.length === 0 ||
+    projectRef === undefined || projectRef.length === 0 ||
+    output === undefined || output.length === 0 ||
+    !/^[a-z0-9]+$/.test(projectRef)
+  ) {
     throw new Error("Missing or invalid deployment environment settings.");
   }
   const response = await fetch(

@@ -1,7 +1,9 @@
-import { connectDatabase } from "../supabase/functions/_shared/database.ts";
-import type { Account } from "../supabase/functions/_shared/store.ts";
+import { connectDatabase } from "supabase/functions/_shared/database.ts";
+import type { Account } from "supabase/functions/_shared/store.ts";
 const connectionString = Deno.env.get("APP_DATABASE_URL");
-if (!connectionString) throw new Error("Set APP_DATABASE_URL in .env first.");
+if (connectionString === undefined || connectionString.length === 0) {
+  throw new Error("Set APP_DATABASE_URL in .env first.");
+}
 using kv = await Deno.openKv("./data/credits.kv");
 const sql = connectDatabase(connectionString);
 try {
@@ -13,7 +15,7 @@ try {
     ) {
       const rows =
         await tx`INSERT INTO credit_cards.accounts (id, name, balance, created_at) VALUES (${a.id}, ${a.name}, ${a.balance}, ${a.createdAt}) ON CONFLICT (id) DO NOTHING RETURNING id`;
-      if (rows.length) inserted++;
+      if (rows.length > 0) inserted++;
       else skipped++;
     }
     for await (

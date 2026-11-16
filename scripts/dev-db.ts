@@ -1,8 +1,10 @@
 import { dirname, fromFileUrl, join, resolve } from "@std/path";
+import { exists } from "@std/fs/exists";
+import { encodeHex } from "@std/encoding/hex";
 import {
   connectDatabase,
   type Sql,
-} from "../supabase/functions/_shared/database.ts";
+} from "supabase/functions/_shared/database.ts";
 
 const root = resolve(dirname(fromFileUrl(import.meta.url)), "..");
 const data = join(root, "data");
@@ -11,20 +13,12 @@ const log = join(data, "dev-postgres.log");
 const username = "credit_cards_dev";
 const decoder = new TextDecoder();
 
-async function exists(path: string): Promise<boolean> {
-  try {
-    await Deno.stat(path);
-    return true;
-  } catch (error) {
-    if (error instanceof Deno.errors.NotFound) return false;
-    throw error;
-  }
-}
-
 async function tool(name: string): Promise<string> {
   const suffix = Deno.build.os === "windows" ? ".exe" : "";
   const configured = Deno.env.get("POSTGRES_BIN");
-  if (configured) return join(configured, name + suffix);
+  if (configured !== undefined && configured.length > 0) {
+    return join(configured, name + suffix);
+  }
   try {
     if (
       (await new Deno.Command(name, {
@@ -126,14 +120,11 @@ async function migrate(sql: Sql) {
       const digest = new Uint8Array(
         await crypto.subtle.digest("SHA-256", new TextEncoder().encode(source)),
       );
-      const checksum = Array.from(
-        digest,
-        (byte) => byte.toString(16).padStart(2, "0"),
-      ).join("");
+      const checksum = encodeHex(digest);
       const applied = await tx<
         { checksum: string }[]
       >`SELECT checksum FROM public.credit_cards_local_migrations WHERE name = ${name}`;
-      if (applied.length) {
+      if (applied.length > 0) {
         if (applied[0].checksum !== checksum) {
           throw new Error(
             `Applied migration ${name} has changed. Add a new migration instead of editing an applied one.`,
@@ -202,8 +193,8 @@ export async function prepareLocalDatabase(): Promise<
   try {
     for (const name of ["credit_cards_dev", "credit_cards_test"]) {
       if (
-        !(await admin`SELECT datname FROM pg_database WHERE datname = ${name}`)
-          .length
+        (await admin`SELECT datname FROM pg_database WHERE datname = ${name}`)
+          .length === 0
       ) {
         // Fixed, application-owned names; never supplied from an environment URL.
         await admin.unsafe(`CREATE DATABASE "${name}"`);

@@ -1,5 +1,5 @@
 const apiBaseUrl = Deno.env.get("API_BASE_URL");
-if (!apiBaseUrl) {
+if (apiBaseUrl === undefined || apiBaseUrl.length === 0) {
   throw new Error(
     "Set API_BASE_URL to the backend URL before building GitHub Pages.",
   );
@@ -14,7 +14,10 @@ if (
     "API_BASE_URL must use HTTPS (HTTP is permitted for local tests).",
   );
 }
-if (url.username || url.password || url.search || url.hash) {
+if (
+  url.username.length > 0 || url.password.length > 0 || url.search.length > 0 ||
+  url.hash.length > 0
+) {
   throw new Error(
     "API_BASE_URL cannot contain credentials, query or fragment.",
   );

@@ -1,4 +1,5 @@
-import { databaseFailure } from "./supabase/functions/_shared/database.ts";
+import { databaseFailure } from "supabase/functions/_shared/database.ts";
+import { assertFalse, assertStringIncludes } from "@std/assert";
 
 Deno.test("database diagnostics distinguish setup failures without exposing credentials", () => {
   const cases = [
@@ -15,11 +16,10 @@ Deno.test("database diagnostics distinguish setup failures without exposing cred
   ] as const;
   for (const [error, expected] of cases) {
     const result = databaseFailure(error);
-    if (!result.message.includes(expected)) {
-      throw new Error(`Missing diagnostic: ${expected}`);
-    }
-    if (JSON.stringify(result).includes("private-password")) {
-      throw new Error("Diagnostic exposed a credential");
-    }
+    assertStringIncludes(result.message, expected);
+    assertFalse(
+      JSON.stringify(result).includes("private-password"),
+      "Diagnostic exposed a credential",
+    );
   }
 });
